@@ -103,42 +103,43 @@ defmodule Natsex.TCPConnector do
           Logger.debug "line: #{command}"
           Logger.debug("line debug: #{inspect has_msg_command}, #{inspect msg_command_buffer}")
 
-          cond do
-            String.starts_with?(command, "INFO ") ->
-              send(self(), {:server_info, command})
+          need_update_state =
+            cond do
+              String.starts_with?(command, "INFO ") ->
+                send(self(), {:server_info, command})
 
-            command == "PING" ->
-              send(self(), {:server_ping, command})
+              command == "PING" ->
+                send(self(), {:server_ping, command})
 
-            command == "+OK" ->
-              :ok
+              command == "+OK" ->
+                :ok
 
-            String.starts_with?(command, "-ERR ") ->
-              "-ERR " <> error_msg = command
-              error_msg = String.slice(error_msg, 1..-2)
-              Logger.error "received -ERR: #{error_msg}"
+              String.starts_with?(command, "-ERR ") ->
+                "-ERR " <> error_msg = command
+                error_msg = String.slice(error_msg, 1..-2)
+                Logger.error "received -ERR: #{error_msg}"
 
-            String.starts_with?(command, "MSG ") ->
-              Logger.debug("Command MSG, debug: #{inspect command}")
-              has_msg_command = true
-              msg_command_buffer = command
-              Logger.debug("Command MSG, has_msg_command #{inspect has_msg_command}, #{inspect msg_command_buffer}")
+              String.starts_with?(command, "MSG ") ->
+                Logger.debug("Command MSG, debug: #{inspect command}")
+                {:update, {true, command}}
 
-            true ->
-              Logger.debug("default case, has_msg_command #{inspect has_msg_command}")
-              if has_msg_command do
-                data = command
-                has_msg_command = false
-
-                send(self(), {:server_msg, msg_command_buffer, data})
-
-                msg_command_buffer = ""
-              else
-                Logger.debug "Unhandled command: #{inspect command}"
-              end
+              true ->
+                Logger.debug("default case, has_msg_command #{inspect has_msg_command}")
+                if has_msg_command do
+                  send(self(), {:server_msg, msg_command_buffer, command})
+                  {:update, {false, ""}}
+                else
+                  Logger.debug "Unhandled command: #{inspect command}"
+                end
             end
 
-          {has_msg_command, msg_command_buffer}
+          case need_update_state do
+            {:update, new_state} ->
+              new_state
+
+            _ ->
+              {has_msg_command, msg_command_buffer}
+          end
 
           end
         )
@@ -161,7 +162,7 @@ defmodule Natsex.TCPConnector do
 
   def handle_info(
     {:server_info, data_str},
-    %{config: config, server_info: server_info} = state) do
+    %{config: config} = state) do
 
     {"INFO", server_info} = Parser.parse_json_response(data_str)
     Logger.debug("Connected")
@@ -221,50 +222,4 @@ defmodule Natsex.TCPConnector do
 
     {:noreply, state}
   end
-
-  def handle_info(:post_init, state) do
-    {:ok, data_str} = :gen_tcp.recv(state.socket, 0)
-    {"INFO", server_info} = Parser.parse_json_response(data_str)
-    Logger.debug("Connected")
-
-    connect_data = %{
-      verbose: true, lang: "elixir", name: "natsex",
-      version: Application.get_env(:natsex, :version),
-      pedantic: true, tls_required: false,
-      protocol: 0
-    }
-
-    msg = Parser.create_json_command("INFO", %{
-      verbose: true, lang: "elixir", name: "natsex",
-      version: Application.get_env(:natsex, :version),
-      pedantic: true, tls_required: false,
-      protocol: 0
-    })
-    request(msg, state.socket, false)
-
-    msg = Parser.create_message("PING")
-    request(msg, state.socket)
-
-    msg = Parser.create_message("SUB", ["telegram.user.notifications", "1"])
-    request(msg, state.socket)
-
-    {:noreply, %{state| server_info: server_info}}
-  end
-
-  def request(msg, socket, is_wait_response \\ true) do
-    Logger.debug "Sending message -> #{inspect msg}"
-    :gen_tcp.send(socket, msg)
-
-    if is_wait_response do
-      {:ok, data_str} = :gen_tcp.recv(socket, 0)
-      Logger.debug "Received response: <- #{inspect data_str}"
-
-      Parser.parse(data_str)
-    end
-  end
-
-  def read(socket) do
-    :gen_tcp.recv(socket, 0)
-  end
-
 end
