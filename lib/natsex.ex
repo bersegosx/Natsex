@@ -1,10 +1,10 @@
 defmodule Natsex do
   @moduledoc """
-  Documentation for Natsex.
+  Elixir client for NATS.
   """
 
   @doc """
-  Hello world.
+
 
   ## Examples
 
@@ -12,7 +12,10 @@ defmodule Natsex do
       :world
 
   """
-  def hello do
-    :world
-  end
+
+  defdelegate start_link, to: Natsex.TCPConnector
+  defdelegate subscribe(subject, who, sid \\ nil, queue_group \\ nil), to: Natsex.TCPConnector
+  defdelegate unsubscribe(sid, max_messages \\ nil), to: Natsex.TCPConnector
+  defdelegate publish(subject, payload \\ "", reply \\ nil), to: Natsex.TCPConnector
+
 end

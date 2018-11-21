@@ -1,0 +1,45 @@
+defmodule Natsex.Parser do
+  require Logger
+
+  @message_end "\r\n"
+
+  def parse(message) do
+    [command|params] =
+      message
+      |> String.replace_suffix(@message_end, "")
+      |> String.split(" ")
+
+    Logger.debug("Parsed command: #{command}, params: #{inspect params}")
+
+    {command, params}
+  end
+
+  def parse_json_response(message) do
+    {command, data_json_str} = parse(message)
+    data = Poison.decode!(data_json_str, keys: :atoms)
+
+    Logger.debug("Received command: #{command}, data: #{inspect data}")
+
+    {command, data}
+  end
+
+  def command_publish(subject, reply_to, payload) do
+    create_message("PUB", [String.upcase(subject), reply_to, String.length(payload)]) <>
+    create_message(payload)
+  end
+
+  def create_json_command(command, data) do
+    create_message(command, [Poison.encode!(data)])
+  end
+
+  def create_message(command, params \\ []) do
+    params_str =
+      params
+      |> Enum.filter(fn x -> x end)
+      |> Enum.join(" ")
+
+    params_str = if params_str != "", do: " " <> params_str, else: ""
+    "#{command}#{params_str}#{@message_end}"
+  end
+
+end
