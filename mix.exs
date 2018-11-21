@@ -7,7 +7,12 @@ defmodule Natsex.MixProject do
       version: "0.1.0",
       elixir: "~> 1.6",
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+
+      package: package(),
+      description: description(),
+      name: "Natsex",
+      source_url: "https://github.com/bersegosx/Natsex"
     ]
   end
 
@@ -23,6 +28,19 @@ defmodule Natsex.MixProject do
     [
       {:poison, "~> 3.1"},
       {:uuid, "~> 1.1"},
+
+      {:ex_doc, "~> 0.18.0", only: :dev, runtime: false},
+    ]
+  end
+
+  defp description() do
+    "Client for NATS"
+  end
+
+  defp package() do
+    [
+      licenses: ["MIT"],
+      links: %{"GitHub" => "https://github.com/bersegosx/Natsex"}
     ]
   end
 end
