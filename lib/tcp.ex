@@ -1,4 +1,8 @@
 defmodule Natsex.TCPConnector do
+  @moduledoc """
+  Heart of Natsex
+  """
+
   use GenServer
   require Logger
 
@@ -14,14 +18,23 @@ defmodule Natsex.TCPConnector do
     pass: nil
   }
 
+  @doc false
+  def get_state do
+    # used only for tests
+    GenServer.call(:natsex_connector, :state)
+  end
+
+  @doc false
   def subscribe(subject, who, sid \\ nil, queue_group \\ nil) do
     GenServer.call(:natsex_connector, {:subscribe, who, subject, sid, queue_group})
   end
 
+  @doc false
   def unsubscribe(sid, max_messages \\ nil) do
     GenServer.cast(:natsex_connector, {:unsubscribe, sid, max_messages})
   end
 
+  @doc false
   def publish(subject, payload \\ "", reply \\ nil) do
     GenServer.cast(:natsex_connector, {:publish, subject, reply, payload})
   end
@@ -51,6 +64,10 @@ defmodule Natsex.TCPConnector do
       subscibers: %{},
       config: config
     }}
+  end
+
+  def handle_call(:state, _from, state) do
+    {:reply, state, state}
   end
 
   def handle_call(
@@ -160,12 +177,18 @@ defmodule Natsex.TCPConnector do
     {:noreply, new_state}
   end
 
-  def handle_info(
-    {:server_info, data_str},
-    %{config: config} = state) do
-
+  def handle_info({:server_info, data_str}, state) do
     {"INFO", server_info} = Parser.parse_json_response(data_str)
     Logger.debug("Connected")
+
+    send(self(), :connect)
+
+    {:noreply, %{state| server_info: server_info}}
+  end
+
+  def handle_info(
+    :connect,
+    %{server_info: server_info, config: config} = state) do
 
     connect_data = %{
       verbose: config.verbose, lang: "elixir", name: "natsex",
