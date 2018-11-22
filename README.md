@@ -18,9 +18,23 @@ def deps do
 end
 ```
 
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at [https://hexdocs.pm/natsex](https://hexdocs.pm/natsex).
+## Usage
+
+```elixir
+iex(1)> Natsex.start_link
+{:ok, #PID<0.178.0>}
+iex(2)> Natsex.subscribe "telegram.user.notifications", self
+"13b2d0cd-9dba-43b6-bb5d-288d48346ff4"
+iex(3)> flush
+{:natsex_message,
+ {"telegram.user.notifications", "13b2d0cd-9dba-43b6-bb5d-288d48346ff4", nil},
+ "Good news, everyone!"}
+:ok
+iex(4)>
+```
+
+## Documentation
+Docs can be found at [hexdocs][hexdocs].
 
 <br>
 
@@ -30,3 +44,4 @@ be found at [https://hexdocs.pm/natsex](https://hexdocs.pm/natsex).
 
 [travis-ci]:        https://travis-ci.org/bersegosx/Natsex
 [hexpm]:            https://hex.pm/packages/natsex
+[hexdocs]:          https://hexdocs.pm/natsex
