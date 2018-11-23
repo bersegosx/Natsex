@@ -12,7 +12,10 @@ defmodule Natsex.MixProject do
       package: package(),
       description: description(),
       name: "Natsex",
-      source_url: "https://github.com/bersegosx/Natsex"
+      source_url: "https://github.com/bersegosx/Natsex",
+
+      test_coverage: [tool: ExCoveralls],
+      preferred_cli_env: ["coveralls": :test],
     ]
   end
 
@@ -31,6 +34,7 @@ defmodule Natsex.MixProject do
 
       {:ex_doc, "~> 0.18.0", only: :dev, runtime: false},
       {:ex_parameterized, "~> 1.3.2", only: :test},
+      {:excoveralls, "~> 0.10", only: :test},
     ]
   end
 

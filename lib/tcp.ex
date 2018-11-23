@@ -9,6 +9,7 @@ defmodule Natsex.TCPConnector do
   alias Natsex.Parser
   alias Natsex.CommandEater
 
+  @connect_timeout 200
   @default_config %{
     host: "localhost",
     port: 4222,
@@ -54,17 +55,23 @@ defmodule Natsex.TCPConnector do
     Logger.debug("Connecting to server ..., config: #{inspect config}")
 
     opts = [:binary, active: :once]
-    {:ok, socket} = :gen_tcp.connect(to_charlist(config.host), config.port, opts)
-    {:ok, %{
-      socket: socket,
-      server_info: nil,
-      reader: %{
-        need_more: false,
-        buffer: ""
-      },
-      subscibers: %{},
-      config: config
-    }}
+    case :gen_tcp.connect(to_charlist(config.host), config.port, opts,
+                          @connect_timeout) do
+      {:ok, socket} ->
+        {:ok, %{
+          socket: socket,
+          server_info: nil,
+          reader: %{
+            need_more: false,
+            buffer: ""
+          },
+          subscibers: %{},
+          config: config
+        }}
+
+      {:error, reason} ->
+        {:stop, reason}
+    end
   end
 
   def handle_call(:state, _from, state) do
