@@ -1,7 +1,8 @@
 language: elixir
 elixir: '1.6'
 
-env:
-  - MIX_ENV=test
+script:
+  - MIX_ENV=test mix do compile --warnings-as-errors, coveralls.json
 
-script: mix coveralls.travis
+after_success:
+  - bash <(curl -s https://codecov.io/bash)
