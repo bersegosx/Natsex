@@ -14,7 +14,7 @@ The package can be installed by adding `natsex` to your list of dependencies in 
 ```elixir
 def deps do
   [
-    {:natsex, "~> 0.2.1"}
+    {:natsex, "~> 0.2.2"}
   ]
 end
 ```

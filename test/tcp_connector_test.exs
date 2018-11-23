@@ -1,6 +1,8 @@
 defmodule NatsexTest.TCPConnector do
   use ExUnit.Case
 
+  @max_payload 500
+
   setup do
     {:ok, pid} = MockServer.start_link
     Natsex.start_link
@@ -9,7 +11,7 @@ defmodule NatsexTest.TCPConnector do
   end
 
   defp conect_client(mock_pid) do
-    MockServer.send_data(mock_pid, "INFO {\"auth_required\":false,\"max_payload\":1048576} \r\n")
+    MockServer.send_data(mock_pid, "INFO {\"auth_required\":false,\"max_payload\":#{@max_payload}} \r\n")
     :timer.sleep(50)
     MockServer.reset_buffer(mock_pid)
   end
@@ -68,13 +70,23 @@ defmodule NatsexTest.TCPConnector do
     conect_client(mock_pid)
 
     {subject, payload} = {"service.news.out", "breaking news"}
-    _sid = Natsex.publish(subject, payload)
+    :ok = Natsex.publish(subject, payload)
     :timer.sleep(50)
     server_state = MockServer.get_state(mock_pid)
 
     expected = "PUB #{String.upcase(subject)} #{String.length(payload)}\r\n" <>
                "#{payload}\r\n"
     assert server_state.buffer == expected
+  end
+
+  test "publish big message", context do
+    mock_pid = context.mock_pid
+    conect_client(mock_pid)
+
+    {subject, payload} = {"out", String.duplicate("x", @max_payload + 1)}
+
+    assert {:error, "Message is too big (limit: 500, current: 501)"} ==
+            Natsex.publish(subject, payload)
   end
 
 end

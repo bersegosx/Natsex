@@ -17,6 +17,8 @@ defmodule Natsex do
 
   """
 
+  @default_connect_timeout 200
+
   @doc """
   Starts Natsex client process
 
@@ -31,7 +33,8 @@ defmodule Natsex do
       {:ok, #PID<0.195.0>}
 
   """
-  defdelegate start_link(config \\ nil), to: Natsex.TCPConnector
+  defdelegate start_link(config \\ nil, connect_timeout \\ @default_connect_timeout),
+    to: Natsex.TCPConnector
 
   @doc """
   Initiates a subscription to a subject.
@@ -67,7 +70,7 @@ defmodule Natsex do
   ## Examples
 
       Natsex.publish("news.urgent", "today is monday")
-
+      :ok
   """
   defdelegate publish(subject, payload \\ "", reply \\ nil), to: Natsex.TCPConnector
 

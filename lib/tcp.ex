@@ -9,7 +9,6 @@ defmodule Natsex.TCPConnector do
   alias Natsex.Parser
   alias Natsex.CommandEater
 
-  @connect_timeout 200
   @default_config %{
     host: "localhost",
     port: 4222,
@@ -39,25 +38,26 @@ defmodule Natsex.TCPConnector do
 
   @doc false
   def publish(subject, payload \\ "", reply \\ nil) do
-    GenServer.cast(:natsex_connector, {:publish, subject, reply, payload})
+    GenServer.call(:natsex_connector, {:publish, subject, reply, payload})
   end
 
-  def start_link(config \\ nil) do
-    GenServer.start_link(__MODULE__, config, name: :natsex_connector)
+  def start_link(config, connect_timeout) do
+    GenServer.start_link(__MODULE__, [config, connect_timeout], name: :natsex_connector)
   end
 
-  def init(config) do
-    config = if is_map(config) do
-      Map.merge(@default_config, config)
-    else
-      @default_config
-    end
+  def init([config, connect_timeout]) do
+    config =
+      if is_map(config) do
+        Map.merge(@default_config, config)
+      else
+        @default_config
+      end
 
     Logger.debug("Connecting to server ..., config: #{inspect config}")
 
     opts = [:binary, active: :once]
     case :gen_tcp.connect(to_charlist(config.host), config.port, opts,
-                          @connect_timeout) do
+                          connect_timeout) do
       {:ok, socket} ->
         {:ok, %{
           socket: socket,
@@ -92,17 +92,26 @@ defmodule Natsex.TCPConnector do
     {:reply, sid, %{state| subscibers: Map.put(subscibers, sid, who)}}
   end
 
+  def handle_call({:publish, subject, reply_to, payload}, _from, state) do
+    if byte_size(payload) > state.server_info.max_payload do
+      {:reply,
+        {:error,
+         "Message is too big (limit: #{state.server_info.max_payload}, " <>
+         "current: #{byte_size(payload)})"
+        },
+      state}
+    else
+      msg = Parser.command_publish(subject, reply_to, payload)
+      Logger.debug "Publish command: #{inspect msg}"
+      :gen_tcp.send(state.socket, msg)
+
+      {:reply, :ok, state}
+    end
+  end
+
   def handle_cast({:unsubscribe, sid, max_messages}, state) do
     msg = Parser.create_message("UNSUB", [sid, max_messages])
     Logger.debug "Unsubscibe command: #{inspect msg}"
-    :gen_tcp.send(state.socket, msg)
-
-    {:noreply, state}
-  end
-
-  def handle_cast({:publish, subject, reply_to, payload}, state) do
-    msg = Parser.command_publish(subject, reply_to, payload)
-    Logger.debug "Publish command: #{inspect msg}"
     :gen_tcp.send(state.socket, msg)
 
     {:noreply, state}
