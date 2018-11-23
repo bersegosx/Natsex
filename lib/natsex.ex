@@ -19,8 +19,19 @@ defmodule Natsex do
 
   @doc """
   Starts Natsex client process
+
+  ## Examples
+
+      # connects with default params, host - "localhost", port - 4222
+      Natsex.start_link
+      {:ok, #PID<0.194.0>}
+
+      # connects on custom port with credentials
+      Natsex.start_link(%{host: "localhost", port: 4567, user: "admin", pass: "12345"})
+      {:ok, #PID<0.195.0>}
+
   """
-  defdelegate start_link, to: Natsex.TCPConnector
+  defdelegate start_link(config \\ nil), to: Natsex.TCPConnector
 
   @doc """
   Initiates a subscription to a subject.
