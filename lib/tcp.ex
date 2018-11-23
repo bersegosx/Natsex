@@ -17,7 +17,8 @@ defmodule Natsex.TCPConnector do
     tls_required: false,
     pedantic: true,
     user: nil,
-    pass: nil
+    pass: nil,
+    auth_token: nil
   }
 
   @doc false
@@ -164,7 +165,9 @@ defmodule Natsex.TCPConnector do
 
     connect_data =
       if server_info.auth_required do
-        Map.merge(connect_data, %{user: config.user, pass: config.pass})
+        Map.merge(connect_data, %{
+          user: config.user, pass: config.pass, auth_token: config.auth_token
+        })
       else
         connect_data
       end
