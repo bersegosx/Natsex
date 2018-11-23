@@ -25,17 +25,19 @@ end
 # connects with default params, host - "localhost", port - 4222
 iex(1)> Natsex.start_link
 {:ok, #PID<0.178.0>}
+
 # or connects on custom port with credentials
 iex(1)> Natsex.start_link(%{host: "localhost", port: 4567, user: "admin", pass: "12345"})
 {:ok, #PID<0.195.0>}
+
 iex(2)> Natsex.subscribe "telegram.user.notifications", self
 "13b2d0cd-9dba-43b6-bb5d-288d48346ff4"
+
 iex(3)> flush
 {:natsex_message,
  {"telegram.user.notifications", "13b2d0cd-9dba-43b6-bb5d-288d48346ff4", nil},
  "Good news, everyone!"}
 :ok
-iex(4)>
 ```
 
 ## Documentation
