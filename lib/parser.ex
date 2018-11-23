@@ -7,11 +7,7 @@ defmodule Natsex.Parser do
   @message_end "\r\n"
 
   def parse(message) do
-    [command|params] =
-      message
-      |> String.replace_suffix(@message_end, "")
-      |> String.split(" ")
-
+    [command|params] = String.split(message, " ")
     Logger.debug("Parsed command: #{command}, params: #{inspect params}")
 
     {command, params}
@@ -27,7 +23,7 @@ defmodule Natsex.Parser do
   end
 
   def command_publish(subject, reply_to, payload) do
-    create_message("PUB", [String.upcase(subject), reply_to, String.length(payload)]) <>
+    create_message("PUB", [String.upcase(subject), reply_to, byte_size(payload)]) <>
     create_message(payload)
   end
 

@@ -7,6 +7,7 @@ defmodule Natsex.TCPConnector do
   require Logger
 
   alias Natsex.Parser
+  alias Natsex.CommandEater
 
   @default_config %{
     host: "localhost",
@@ -107,74 +108,31 @@ defmodule Natsex.TCPConnector do
 
     Logger.debug "TCP -> #{inspect msg}"
 
-    new_state =
-      if String.ends_with?(msg, "\r\n") do
-        commands = reader.buffer <> msg
-        Logger.debug "Full buffer: #{inspect commands}"
+    {rest_buffer, commands} = CommandEater.feed(reader.buffer <> msg)
+    for command <- commands do
+      case command do
+        "PING" ->
+          send(self(), :server_ping)
 
-        {has_msg_command, msg_command_buffer} = Enum.reduce(
-          String.split(commands, "\r\n", trim: true),
-          {false, ""},
-          fn (command, {has_msg_command, msg_command_buffer}) ->
+        "+OK" ->
+          :ok
 
-          Logger.debug "line: #{command}"
-          Logger.debug("line debug: #{inspect has_msg_command}, #{inspect msg_command_buffer}")
+        "PONG" ->
+          :pong
 
-          need_update_state =
-            cond do
-              String.starts_with?(command, "INFO ") ->
-                send(self(), {:server_info, command})
+        "INFO " <> _ ->
+          send(self(), {:server_info, command})
 
-              command == "PING" ->
-                send(self(), {:server_ping, command})
+        "-ERR " <> error_msg ->
+          error_msg = String.slice(error_msg, 1..-2)
+          Logger.error "received -ERR: #{error_msg}"
 
-              command == "+OK" ->
-                :ok
-
-              String.starts_with?(command, "-ERR ") ->
-                "-ERR " <> error_msg = command
-                error_msg = String.slice(error_msg, 1..-2)
-                Logger.error "received -ERR: #{error_msg}"
-
-              String.starts_with?(command, "MSG ") ->
-                Logger.debug("Command MSG, debug: #{inspect command}")
-                {:update, {true, command}}
-
-              true ->
-                Logger.debug("default case, has_msg_command #{inspect has_msg_command}")
-                if has_msg_command do
-                  send(self(), {:server_msg, msg_command_buffer, command})
-                  {:update, {false, ""}}
-                else
-                  Logger.debug "Unhandled command: #{inspect command}"
-                end
-            end
-
-          case need_update_state do
-            {:update, new_state} ->
-              new_state
-
-            _ ->
-              {has_msg_command, msg_command_buffer}
-          end
-
-          end
-        )
-
-        if has_msg_command do
-          # msg body wasnt received
-          %{state| reader: %{
-            need_more: true, buffer: msg_command_buffer
-          }}
-        else
-          state
-        end
-
-      else
-        %{state| reader: %{need_more: true, buffer: state.buffer <> msg}}
+        {"MSG " <> _ = message_header, message_body} ->
+          send(self(), {:server_msg, message_header, message_body})
       end
+    end
 
-    {:noreply, new_state}
+    {:noreply, %{state| reader: %{buffer: rest_buffer}}}
   end
 
   def handle_info({:server_info, data_str}, state) do
@@ -211,10 +169,8 @@ defmodule Natsex.TCPConnector do
     {:noreply, %{state| server_info: server_info}}
   end
 
-  def handle_info({:server_ping, data_str}, %{socket: socket} = state) do
-    {"PING", []} = Parser.parse(data_str)
+  def handle_info(:server_ping, %{socket: socket} = state) do
     Logger.debug("server send PING")
-
     :gen_tcp.send(socket, Parser.create_message("PONG"))
     Logger.debug "sent PONG"
 
@@ -236,8 +192,8 @@ defmodule Natsex.TCPConnector do
     Logger.debug "Reply: #{reply_to}, size: #{message_body_length}"
 
     {message_body_length, _} = Integer.parse(message_body_length, 10)
-    if String.length(message_body) != message_body_length do
-      Logger.error ":message_body_length_mismatch, #{message_body_length}, #{String.length(message_body)}"
+    if byte_size(message_body) != message_body_length do
+      Logger.error ":message_body_length_mismatch, #{message_body_length}, #{byte_size(message_body)}"
       Process.exit(self(), :message_body_length_mismatch)
     end
 

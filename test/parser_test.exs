@@ -9,9 +9,9 @@ defmodule NatsexTest.Parser do
       assert Parser.parse(input) == expected
     end do
       [
-        {"+OK\r\n", {"+OK", []} },
-        {"MSG a.b.> sid1 123\r\n", {"MSG", ["a.b.>", "sid1", "123"]} },
-        {"-ERR 'Some auth error'\r\n", {"-ERR", ["'Some", "auth", "error'"]} },
+        {"+OK", {"+OK", []} },
+        {"MSG a.b.> sid1 123\r\n", {"MSG", ["a.b.>", "sid1", "123\r\n"]} },
+        {"-ERR 'Some auth error'", {"-ERR", ["'Some", "auth", "error'"]} },
       ]
   end
 
@@ -50,6 +50,9 @@ defmodule NatsexTest.Parser do
 
         {"service.requests", nil, "",
          "PUB SERVICE.REQUESTS 0\r\n\r\n"},
+
+        {"service.requests", nil, "123\r\n5",
+         "PUB SERVICE.REQUESTS 6\r\n123\r\n5\r\n"},
       ]
   end
 

@@ -55,8 +55,8 @@ defmodule NatsexTest.TCPConnector do
 
     assert "SUB #{subject} #{sid}\r\n" == server_state.buffer
 
-    message = "myME$$Age"
-    packet = "MSG #{subject} #{sid} #{String.length(message)}\r\n" <>
+    message = "myME\r\n$$Age"
+    packet = "MSG #{subject} #{sid} #{byte_size(message)}\r\n" <>
              "#{message}\r\n"
 
     MockServer.send_data(mock_pid, packet)
