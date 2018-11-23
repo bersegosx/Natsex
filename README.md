@@ -13,7 +13,7 @@ The package can be installed by adding `natsex` to your list of dependencies in 
 ```elixir
 def deps do
   [
-    {:natsex, "~> 0.1.0"}
+    {:natsex, "~> 0.2.0"}
   ]
 end
 ```
