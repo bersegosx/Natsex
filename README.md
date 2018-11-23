@@ -2,6 +2,7 @@
 
 [![Build Status][shield-travis]][travis-ci]
 [![Version][shield-version]][hexpm]
+[![Coverage](https://codecov.io/gh/bersegosx/Natsex/branch/master/graph/badge.svg)][codecov]
 [![License][shield-license]][hexpm]
 
 > Elixir client for [NATS](https://nats.io/)
@@ -49,3 +50,4 @@ Docs can be found at [hexdocs][hexdocs].
 [travis-ci]:        https://travis-ci.org/bersegosx/Natsex
 [hexpm]:            https://hex.pm/packages/natsex
 [hexdocs]:          https://hexdocs.pm/natsex
+[codecov]:          https://codecov.io/gh/bersegosx/Natsex
