@@ -20,6 +20,20 @@ defmodule Natsex.TCPConnector do
     auth_token: nil
   }
 
+  @initial_state %{
+    socket: nil,
+    server_info: nil,
+    reader: %{
+      buffer: ""
+    },
+    subscibers: %{},
+    config: nil,
+    ping_interval: nil,
+    pong_waiter: nil,
+  }
+
+  @pong_receive_timeout Application.get_env(:natsex, :pong_receive_timeout)
+
   @doc false
   def get_state do
     # used only for tests
@@ -65,11 +79,18 @@ defmodule Natsex.TCPConnector do
     end
   end
 
-  def start_link(config, connect_timeout) do
-    GenServer.start_link(__MODULE__, [config, connect_timeout], name: :natsex_connector)
+  def stop do
+    GenServer.stop(:natsex_connector)
   end
 
-  def init([config, connect_timeout]) do
+  def start_link(config, connect_timeout, ping_interval) do
+    GenServer.start_link(
+      __MODULE__, [config, connect_timeout, ping_interval],
+      name: :natsex_connector
+    )
+  end
+
+  def init([config, connect_timeout, ping_interval]) do
     config =
       if is_map(config) do
         Map.merge(@default_config, config)
@@ -83,15 +104,10 @@ defmodule Natsex.TCPConnector do
     case :gen_tcp.connect(to_charlist(config.host), config.port, opts,
                           connect_timeout) do
       {:ok, socket} ->
-        {:ok, %{
+        {:ok, %{@initial_state |
           socket: socket,
-          server_info: nil,
-          reader: %{
-            need_more: false,
-            buffer: ""
-          },
-          subscibers: %{},
-          config: config
+          config: config,
+          ping_interval: ping_interval
         }}
 
       {:error, reason} ->
@@ -159,6 +175,8 @@ defmodule Natsex.TCPConnector do
           :ok
 
         "PONG" ->
+          Logger.debug("server: PONG")
+          send(state.pong_waiter, :pong)
           :pong
 
         "INFO " <> _ ->
@@ -209,6 +227,8 @@ defmodule Natsex.TCPConnector do
     :gen_tcp.send(state.socket, msg)
     Logger.debug "<- #{inspect msg}"
 
+    Process.send_after(self(), :keep_alive, state.ping_interval)
+
     {:noreply, %{state| server_info: server_info}}
   end
 
@@ -242,6 +262,30 @@ defmodule Natsex.TCPConnector do
 
     send(subscibers[sid], {:natsex_message, {subject, sid, reply_to}, message_body})
 
+    {:noreply, state}
+  end
+
+  def handle_info(:keep_alive, state) do
+    natsex_pid = self()
+
+    {:ok, pong_waiter} = Task.start_link(fn ->
+      receive do
+        :pong -> Logger.debug("Server PONG was received")
+      after
+        @pong_receive_timeout -> send(natsex_pid, :keep_alive_timeout)
+      end
+
+      Process.send_after(natsex_pid, :keep_alive, state.ping_interval)
+    end)
+
+    :gen_tcp.send(state.socket, Parser.create_message("PING"))
+    Logger.debug("client: PING")
+
+    {:noreply, %{state| pong_waiter: pong_waiter}}
+  end
+
+  def handle_info(:keep_alive_timeout, state) do
+    Logger.error("Server didn't respond on PING command")
     {:noreply, state}
   end
 end

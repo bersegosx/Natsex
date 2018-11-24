@@ -8,17 +8,12 @@ defmodule Natsex.Parser do
 
   def parse(message) do
     [command|params] = String.split(message, " ")
-    Logger.debug("Parsed command: #{command}, params: #{inspect params}")
-
     {command, params}
   end
 
   def parse_json_response(message) do
     {command, data_json_str} = parse(message)
     data = Poison.decode!(data_json_str, keys: :atoms)
-
-    Logger.debug("Received command: #{command}, data: #{inspect data}")
-
     {command, data}
   end
 

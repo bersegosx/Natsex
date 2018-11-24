@@ -21,6 +21,9 @@ use Mix.Config
 #     config :logger, level: :info
 #
 
+config :natsex,
+  pong_receive_timeout: 5_000
+
 config :logger,
   level: :info,
   backends: [:console]
@@ -31,4 +34,5 @@ config :logger,
 # Configuration from the imported file will override the ones defined
 # here (which is why it is important to import them last).
 #
-#     import_config "#{Mix.env}.exs"
+
+import_config "#{Mix.env}.exs"

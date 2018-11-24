@@ -1,13 +1,19 @@
 defmodule NatsexTest.TCPConnector do
   use ExUnit.Case
 
+  import ExUnit.CaptureLog
+
   @max_payload 500
 
-  setup do
-    {:ok, pid} = MockServer.start_link
-    Natsex.start_link
+  setup context do
+    if context[:describe] == "keep_alive" do
+      :ok
+    else
+      {:ok, pid} = MockServer.start_link
+      Natsex.start_link
 
-    %{mock_pid: pid}
+      %{mock_pid: pid}
+    end
   end
 
   defp conect_client(mock_pid) do
@@ -35,15 +41,46 @@ defmodule NatsexTest.TCPConnector do
     assert "CONNECT " <> _ = server_state.buffer
   end
 
-  test "will respond on ping", context do
-    mock_pid = context.mock_pid
-    conect_client(mock_pid)
+  describe "keep_alive" do
+    test "will respond on ping", _context do
+      {:ok, mock_pid} = MockServer.start_link
+      Natsex.start_link
+      conect_client(mock_pid)
 
-    MockServer.send_data(mock_pid, "PING\r\n")
+      MockServer.send_data(mock_pid, "PING\r\n")
 
-    :timer.sleep(50)
-    server_state = MockServer.get_state(mock_pid)
-    assert "PONG\r\n" == server_state.buffer
+      :timer.sleep(50)
+      server_state = MockServer.get_state(mock_pid)
+      assert "PONG\r\n" == server_state.buffer
+    end
+
+    test "will send ping", _context do
+      {:ok, mock_pid} = MockServer.start_link
+
+      ping_interval = 50
+      Natsex.start_link(%{}, 200, ping_interval)
+      conect_client(mock_pid)
+
+      # check after `ping_interval`
+      :timer.sleep(ping_interval + 50)
+
+      server_state = MockServer.get_state(mock_pid)
+      assert "PING\r\n" == server_state.buffer
+    end
+
+    test "will log if `PONG` didn't receive after timeout", _context do
+      {:ok, mock_pid} = MockServer.start_link
+
+      # starts client with new params
+      ping_interval = 50
+      Natsex.start_link(%{}, 200, ping_interval)
+      conect_client(mock_pid)
+
+      pong_receive_timeout = Application.get_env(:natsex, :pong_receive_timeout)
+      assert capture_log(fn ->
+        :timer.sleep(pong_receive_timeout + 100)
+      end) =~ "Server didn't respond on PING command"
+    end
   end
 
   test "subscribe command", context do
@@ -65,28 +102,44 @@ defmodule NatsexTest.TCPConnector do
     assert_receive {:natsex_message, {^subject, ^sid, nil}, ^message}
   end
 
-  test "publish command", context do
-    mock_pid = context.mock_pid
-    conect_client(mock_pid)
+  describe "publish command" do
+    test "will send", context do
+      mock_pid = context.mock_pid
+      conect_client(mock_pid)
 
-    {subject, payload} = {"service.news.out", "breaking news"}
-    :ok = Natsex.publish(subject, payload)
-    :timer.sleep(50)
-    server_state = MockServer.get_state(mock_pid)
+      {subject, payload} = {"service.news.out", "breaking news"}
+      :ok = Natsex.publish(subject, payload)
+      :timer.sleep(50)
+      server_state = MockServer.get_state(mock_pid)
 
-    expected = "PUB #{String.upcase(subject)} #{String.length(payload)}\r\n" <>
-               "#{payload}\r\n"
-    assert server_state.buffer == expected
+      expected = "PUB #{String.upcase(subject)} #{String.length(payload)}\r\n" <>
+                 "#{payload}\r\n"
+      assert server_state.buffer == expected
+    end
+
+    test "big message", context do
+      mock_pid = context.mock_pid
+      conect_client(mock_pid)
+
+      {subject, payload} = {"out", String.duplicate("x", @max_payload + 1)}
+
+      assert {:error, "Message is too big (limit: 500, current: 501)"} ==
+              Natsex.publish(subject, payload)
+    end
   end
 
-  test "publish big message", context do
-    mock_pid = context.mock_pid
-    conect_client(mock_pid)
+  describe "unsubscribe command" do
+    test "will send command", context do
+      mock_pid = context.mock_pid
+      conect_client(mock_pid)
 
-    {subject, payload} = {"out", String.duplicate("x", @max_payload + 1)}
+      Natsex.unsubscribe("x123x")
+      :timer.sleep(50)
+      server_state = MockServer.get_state(mock_pid)
 
-    assert {:error, "Message is too big (limit: 500, current: 501)"} ==
-            Natsex.publish(subject, payload)
+      expected = "UNSUB x123x\r\n"
+      assert server_state.buffer == expected
+    end
   end
 
 end

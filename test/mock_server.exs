@@ -17,6 +17,10 @@ defmodule MockServer do
     GenServer.start_link(__MODULE__, :ok)
   end
 
+  def stop(pid) do
+    GenServer.stop(pid)
+  end
+
   def init(_) do
     port = 4222
     {:ok, listen_socket}= :gen_tcp.listen(port,

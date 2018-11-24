@@ -1,5 +1,5 @@
 defmodule NatsexTest.CommandEater do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
   use ExUnit.Parameterized
 
   alias Natsex.CommandEater

@@ -22,6 +22,7 @@ defmodule Natsex do
   """
 
   @default_connect_timeout 200
+  @default_ping_interval 20_000
 
   @doc """
   Starts Natsex client process
@@ -41,7 +42,9 @@ defmodule Natsex do
       {:ok, #PID<>}
 
   """
-  defdelegate start_link(config \\ nil, connect_timeout \\ @default_connect_timeout),
+  defdelegate start_link(
+    config \\ nil, connect_timeout \\ @default_connect_timeout,
+    ping_interval \\ @default_ping_interval),
     to: Natsex.TCPConnector
 
   @doc """
@@ -95,5 +98,10 @@ defmodule Natsex do
 
   """
   defdelegate request(subject, payload, timeout \\ 1000), to: Natsex.TCPConnector
+
+  @doc """
+  Stop client
+  """
+  defdelegate stop, to: Natsex.TCPConnector
 
 end
