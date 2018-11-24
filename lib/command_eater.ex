@@ -3,7 +3,7 @@ defmodule Natsex.CommandEater do
   Splits incoming buffer into commands
   """
   @message_end "\r\n"
-  @word_commands ["+OK", "PING", "PONG"]
+  @word_commands ~w(+OK PING PONG)
   @line_commands ["INFO ", "-ERR ", "PUB ", "SUB "]
 
   def feed(buffer, commands \\ []) do
@@ -24,8 +24,6 @@ defmodule Natsex.CommandEater do
         String.split(cmd_line, " ")
         |> Enum.at(-1)
         |> Integer.parse(10)
-
-      IO.puts "cmd: #{inspect cmd_line}, #{inspect rest}"
 
       case rest do
         <<msg::binary-size(message_length), "\r\n", tail_buffer::binary>> ->

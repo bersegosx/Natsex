@@ -14,7 +14,7 @@ The package can be installed by adding `natsex` to your list of dependencies in 
 ```elixir
 def deps do
   [
-    {:natsex, "~> 0.2.2"}
+    {:natsex, "~> 0.3.0"}
   ]
 end
 ```
@@ -38,6 +38,10 @@ iex(3)> flush
  {"telegram.user.notifications", "13b2d0cd-9dba-43b6-bb5d-288d48346ff4", nil},
  "Good news, everyone!"}
 :ok
+
+# sent a message and waits a response, aka "Request-Reply"
+iex(4)> Natsex.request("questions", "sup?")
+{:ok, "response"}
 ```
 
 ## Documentation

@@ -41,6 +41,30 @@ defmodule Natsex.TCPConnector do
     GenServer.call(:natsex_connector, {:publish, subject, reply, payload})
   end
 
+  @doc false
+  def request(subject, payload, timeout \\ 1000) do
+    reply_inbox = "inbox." <> UUID.uuid4()
+
+    waiter_task = Task.async(fn ->
+      receive do
+        {:natsex_message, {^reply_inbox, _sid, _}, message_body} ->
+          message_body
+      end
+    end)
+
+    reply_sid = subscribe(reply_inbox, waiter_task.pid)
+    :ok = publish(subject, payload, reply_inbox)
+
+    case Task.yield(waiter_task, timeout) || Task.shutdown(waiter_task) do
+      nil ->
+        unsubscribe(reply_sid)
+        :timeout
+
+      {:ok, _} = resp ->
+        resp
+    end
+  end
+
   def start_link(config, connect_timeout) do
     GenServer.start_link(__MODULE__, [config, connect_timeout], name: :natsex_connector)
   end

@@ -6,15 +6,19 @@ defmodule Natsex do
 
       iex(1)> Natsex.start_link
       {:ok, #PID<0.178.0>}
+
       iex(2)> Natsex.subscribe "telegram.user.notifications", self
       "13b2d0cd-9dba-43b6-bb5d-288d48346ff4"
+
       iex(3)> flush
       {:natsex_message,
        {"telegram.user.notifications", "13b2d0cd-9dba-43b6-bb5d-288d48346ff4", nil},
        "Good news, everyone!"}
       :ok
-      iex(4)>
 
+      # sent a message and waits a response, aka "Request-Reply"
+      iex(4)> Natsex.request("questions", "sup?")
+      {:ok, "response"}
   """
 
   @default_connect_timeout 200
@@ -32,6 +36,10 @@ defmodule Natsex do
       Natsex.start_link(%{host: "localhost", port: 4567, user: "admin", pass: "12345"})
       {:ok, #PID<0.195.0>}
 
+      # connects with timeout 2sec
+      Natsex.start_link(%{}, 2_000)
+      {:ok, #PID<>}
+
   """
   defdelegate start_link(config \\ nil, connect_timeout \\ @default_connect_timeout),
     to: Natsex.TCPConnector
@@ -48,7 +56,7 @@ defmodule Natsex do
       flush
       {:natsex_message,
        {"telegram.user.notifications", "sub_id", nil},
-       "\"Good news, everyone!\""}
+       "Good news, everyone!"}
 
   """
   defdelegate subscribe(subject, who, sid \\ nil, queue_group \\ nil), to: Natsex.TCPConnector
@@ -73,5 +81,19 @@ defmodule Natsex do
       :ok
   """
   defdelegate publish(subject, payload \\ "", reply \\ nil), to: Natsex.TCPConnector
+
+  @doc """
+  Sending a message and waiting a response, aka "Request-Reply"
+
+  ## Examples
+
+      # wait response with default timeout 1sec
+      {:ok, response} = Natsex.request("questions", "sup?")
+
+      # wait response with custom timeout 10sec
+      :timeout = Natsex.request("questions", "sup?", 10_000)
+
+  """
+  defdelegate request(subject, payload, timeout \\ 1000), to: Natsex.TCPConnector
 
 end
