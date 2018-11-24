@@ -14,7 +14,7 @@ The package can be installed by adding `natsex` to your list of dependencies in 
 ```elixir
 def deps do
   [
-    {:natsex, "~> 0.3.0"}
+    {:natsex, "~> 0.4.0"}
   ]
 end
 ```
@@ -42,6 +42,9 @@ iex(3)> flush
 # sent a message and waits a response, aka "Request-Reply"
 iex(4)> Natsex.request("questions", "sup?")
 {:ok, "response"}
+
+iex(5)> Natsex.stop
+:ok
 ```
 
 ## Documentation

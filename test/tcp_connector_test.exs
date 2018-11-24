@@ -6,7 +6,7 @@ defmodule NatsexTest.TCPConnector do
   @max_payload 500
 
   setup context do
-    if context[:describe] == "keep_alive" do
+    if context[:dont_autostart] == true do
       :ok
     else
       {:ok, pid} = MockServer.start_link
@@ -22,26 +22,56 @@ defmodule NatsexTest.TCPConnector do
     MockServer.reset_buffer(mock_pid)
   end
 
-  test "connect to nats", context do
-    mock_pid = context.mock_pid
+  describe "connect" do
+    test "connect to nats", context do
+      mock_pid = context.mock_pid
 
-    # before connection `server_info` is empty
-    natsex_state = Natsex.TCPConnector.get_state()
-    assert natsex_state.server_info == nil
+      # before connection `server_info` is empty
+      natsex_state = Natsex.TCPConnector.get_state()
+      assert natsex_state.server_info == nil
 
-    MockServer.send_data(mock_pid, "INFO {\"auth_required\":false,\"max_payload\":1048576} \r\n")
-    :timer.sleep(200)
-    natsex_state = Natsex.TCPConnector.get_state()
-    server_state = MockServer.get_state(mock_pid)
+      MockServer.send_data(mock_pid, "INFO {\"auth_required\":false,\"max_payload\":1048576} \r\n")
+      :timer.sleep(50)
 
-    # Natsex received server info
-    assert natsex_state.server_info == %{auth_required: false, max_payload: 1048576}
+      natsex_state = Natsex.TCPConnector.get_state()
+      server_state = MockServer.get_state(mock_pid)
 
-    # Natsex sent 'connect' message
-    assert "CONNECT " <> _ = server_state.buffer
+      # Natsex received server info
+      assert natsex_state.server_info == %{auth_required: false, max_payload: 1048576}
+
+      # Natsex sent 'connect' message
+      assert "CONNECT " <> _ = server_state.buffer
+    end
+
+    @tag :dont_autostart
+    test "will connect with auth credentials", _context do
+      {:ok, mock_pid} = MockServer.start_link
+      {login, password} = {"admin", "123"}
+      Natsex.start_link(%{user: login, pass: password})
+
+      MockServer.send_data(mock_pid, "INFO {\"auth_required\":true,\"max_payload\":1048576} \r\n")
+      :timer.sleep(50)
+
+      natsex_state = Natsex.TCPConnector.get_state()
+      server_state = MockServer.get_state(mock_pid)
+
+      assert natsex_state.server_info.auth_required
+      assert "CONNECT " <> _ = server_state.buffer
+      assert server_state.buffer =~ ~s("user":"#{login}") and
+             server_state.buffer =~ ~s("pass":"#{password}")
+    end
+
+    test "will stop", context do
+      mock_pid = context.mock_pid
+      conect_client(mock_pid)
+
+      assert Natsex.stop == :ok
+    end
   end
 
   describe "keep_alive" do
+
+    @tag :dont_autostart
     test "will respond on ping", _context do
       {:ok, mock_pid} = MockServer.start_link
       Natsex.start_link
@@ -54,6 +84,7 @@ defmodule NatsexTest.TCPConnector do
       assert "PONG\r\n" == server_state.buffer
     end
 
+    @tag :dont_autostart
     test "will send ping", _context do
       {:ok, mock_pid} = MockServer.start_link
 
@@ -68,6 +99,7 @@ defmodule NatsexTest.TCPConnector do
       assert "PING\r\n" == server_state.buffer
     end
 
+    @tag :dont_autostart
     test "will log if `PONG` didn't receive after timeout", _context do
       {:ok, mock_pid} = MockServer.start_link
 
