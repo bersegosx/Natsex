@@ -47,7 +47,7 @@ defmodule NatsexTest.TCPConnector do
     test "will connect with auth credentials", _context do
       {:ok, mock_pid} = MockServer.start_link
       {login, password} = {"admin", "123"}
-      Natsex.start_link(%{user: login, pass: password})
+      Natsex.start_link(config: %{user: login, pass: password})
 
       MockServer.send_data(mock_pid, "INFO {\"auth_required\":true,\"max_payload\":1048576} \r\n")
       :timer.sleep(50)
@@ -89,7 +89,7 @@ defmodule NatsexTest.TCPConnector do
       {:ok, mock_pid} = MockServer.start_link
 
       ping_interval = 50
-      Natsex.start_link(%{}, 200, ping_interval)
+      Natsex.start_link(connect_timeout: 200, ping_interval: ping_interval)
       conect_client(mock_pid)
 
       # check after `ping_interval`
@@ -105,7 +105,7 @@ defmodule NatsexTest.TCPConnector do
 
       # starts client with new params
       ping_interval = 50
-      Natsex.start_link(%{}, 200, ping_interval)
+      Natsex.start_link(connect_timeout: 200, ping_interval: ping_interval)
       conect_client(mock_pid)
 
       pong_receive_timeout = Application.get_env(:natsex, :pong_receive_timeout)

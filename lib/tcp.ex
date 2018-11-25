@@ -9,6 +9,10 @@ defmodule Natsex.TCPConnector do
   alias Natsex.Parser
   alias Natsex.CommandEater
 
+  @default_options config: %{},
+                   connect_timeout: 200,
+                   ping_interval: 20_000
+
   @default_config %{
     host: "localhost",
     port: 4222,
@@ -83,31 +87,24 @@ defmodule Natsex.TCPConnector do
     GenServer.stop(:natsex_connector)
   end
 
-  def start_link(config, connect_timeout, ping_interval) do
-    GenServer.start_link(
-      __MODULE__, [config, connect_timeout, ping_interval],
-      name: :natsex_connector
-    )
+  def start_link(opts) do
+    GenServer.start_link(__MODULE__, opts, name: :natsex_connector)
   end
 
-  def init([config, connect_timeout, ping_interval]) do
-    config =
-      if is_map(config) do
-        Map.merge(@default_config, config)
-      else
-        @default_config
-      end
+  def init(opts) do
+    opts = Keyword.merge(@default_options, opts)
+    config = Map.merge(@default_config, opts[:config])
 
     Logger.debug("Connecting to server ..., config: #{inspect config}")
 
-    opts = [:binary, active: :once]
-    case :gen_tcp.connect(to_charlist(config.host), config.port, opts,
-                          connect_timeout) do
+    case :gen_tcp.connect(to_charlist(config.host), config.port,
+                          [:binary, active: :once],
+                          opts[:connect_timeout]) do
       {:ok, socket} ->
         {:ok, %{@initial_state |
           socket: socket,
           config: config,
-          ping_interval: ping_interval
+          ping_interval: opts[:ping_interval]
         }}
 
       {:error, reason} ->

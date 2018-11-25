@@ -4,7 +4,7 @@ defmodule Natsex.MixProject do
   def project do
     [
       app: :natsex,
-      version: "0.4.0",
+      version: "0.5.0",
       elixir: "~> 1.6",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -16,6 +16,11 @@ defmodule Natsex.MixProject do
 
       test_coverage: [tool: ExCoveralls],
       preferred_cli_env: ["coveralls": :test],
+
+      docs: [
+        main: "readme",
+        extras: ["README.md"]
+      ]
     ]
   end
 

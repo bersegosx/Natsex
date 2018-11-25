@@ -21,31 +21,31 @@ defmodule Natsex do
       {:ok, "response"}
   """
 
-  @default_connect_timeout 200
-  @default_ping_interval 20_000
-
   @doc """
   Starts Natsex client process
 
+  ## Options
+
+    - `:config` - Map that contains connection options (auth, host, port, etc)
+    - `:connect_timeout` - Timeout for NATS server connection (default: 200 ms)
+    - `:ping_interval` - interval for ping/pong  keep-alive mechanism (default: 20_000 ms)
+
   ## Examples
 
-      # connects with default params, host - "localhost", port - 4222
+      # connects with default config, host - "localhost", port - 4222
       Natsex.start_link
       {:ok, #PID<0.194.0>}
 
       # connects on custom port with credentials
-      Natsex.start_link(%{host: "localhost", port: 4567, user: "admin", pass: "12345"})
+      Natsex.start_link(config: %{host: "localhost", port: 4567, user: "admin", pass: "12345"})
       {:ok, #PID<0.195.0>}
 
-      # connects with timeout 2sec
-      Natsex.start_link(%{}, 2_000)
+      # connects with timeout 2 sec
+      Natsex.start_link(connect_timeout: 2_000)
       {:ok, #PID<>}
 
   """
-  defdelegate start_link(
-    config \\ nil, connect_timeout \\ @default_connect_timeout,
-    ping_interval \\ @default_ping_interval),
-    to: Natsex.TCPConnector
+  defdelegate start_link(opt \\ []), to: Natsex.TCPConnector
 
   @doc """
   Initiates a subscription to a subject.
