@@ -4,10 +4,10 @@ defmodule Natsex do
 
   ## Examples
 
-      iex(1)> Natsex.start_link
+      iex(1)>{:ok, pid} = Natsex.start_link
       {:ok, #PID<0.178.0>}
 
-      iex(2)> Natsex.subscribe "telegram.user.notifications", self
+      iex(2)> Natsex.subscribe(pid, "telegram.user.notifications", self())
       "13b2d0cd-9dba-43b6-bb5d-288d48346ff4"
 
       iex(3)> flush
@@ -17,7 +17,7 @@ defmodule Natsex do
       :ok
 
       # sent a message and waits a response, aka "Request-Reply"
-      iex(4)> Natsex.request("questions", "sup?")
+      iex(4)> Natsex.request(pid, "questions", "sup?")
       {:ok, "response"}
   """
 
@@ -28,7 +28,7 @@ defmodule Natsex do
 
     - `:config` - Map that contains connection options (auth, host, port, etc)
     - `:connect_timeout` - Timeout for NATS server connection (default: 200 ms)
-    - `:ping_interval` - interval for ping/pong  keep-alive mechanism (default: 20_000 ms)
+    - `:ping_interval` - interval for ping/pong  keep-alive mechanism (default: 60_000 ms)
 
   ## Examples
 
@@ -55,14 +55,14 @@ defmodule Natsex do
 
   ## Examples
 
-      sid = Natsex.subscribe("news.urgent", self())
+      sid = Natsex.subscribe(pid, "news.urgent", self())
       flush
       {:natsex_message,
        {"telegram.user.notifications", "sub_id", nil},
        "Good news, everyone!"}
 
   """
-  defdelegate subscribe(subject, who, sid \\ nil, queue_group \\ nil), to: Natsex.TCPConnector
+  defdelegate subscribe(pid, subject, who, sid \\ nil, queue_group \\ nil), to: Natsex.TCPConnector
 
   @doc """
   Unsubcribes the connection from the specified subject,
@@ -70,20 +70,21 @@ defmodule Natsex do
 
   ## Examples
 
-      Natsex.unsubscribe "13b2d0cd-9dba-43b6-bb5d-288d48346ff4"
+      Natsex.unsubscribe(pid, "13b2d0cd-9dba-43b6-bb5d-288d48346ff4")
       :ok
   """
-  defdelegate unsubscribe(sid, max_messages \\ nil), to: Natsex.TCPConnector
+  defdelegate unsubscribe(pid, sid, max_messages \\ nil), to: Natsex.TCPConnector
 
   @doc """
   Publishes the message to NATS
 
   ## Examples
 
-      Natsex.publish("news.urgent", "today is monday")
+      Natsex.publish(pid, "news.urgent", "today is monday")
       :ok
   """
-  defdelegate publish(subject, payload \\ "", reply \\ nil), to: Natsex.TCPConnector
+  defdelegate publish(pid, subject, payload \\ "", reply \\ nil,
+                      timeout \\ 5_000), to: Natsex.TCPConnector
 
   @doc """
   Sending a message and waiting a response, aka "Request-Reply"
@@ -91,17 +92,17 @@ defmodule Natsex do
   ## Examples
 
       # wait response with default timeout 1sec
-      {:ok, response} = Natsex.request("questions", "sup?")
+      {:ok, response} = Natsex.request(pid, "questions", "sup?")
 
       # wait response with custom timeout 10sec
-      :timeout = Natsex.request("questions", "sup?", 10_000)
+      :timeout = Natsex.request(pid, "questions", "sup?", 10_000)
 
   """
-  defdelegate request(subject, payload, timeout \\ 1000), to: Natsex.TCPConnector
+  defdelegate request(pid, subject, payload, timeout \\ 1000), to: Natsex.TCPConnector
 
   @doc """
   Stop client
   """
-  defdelegate stop, to: Natsex.TCPConnector
+  defdelegate stop(pid), to: Natsex.TCPConnector
 
 end

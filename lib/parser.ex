@@ -18,7 +18,7 @@ defmodule Natsex.Parser do
   end
 
   def command_publish(subject, reply_to, payload) do
-    create_message("PUB", [String.upcase(subject), reply_to, byte_size(payload)]) <>
+    create_message("PUB", [subject, reply_to, byte_size(payload)]) <>
     create_message(payload)
   end
 

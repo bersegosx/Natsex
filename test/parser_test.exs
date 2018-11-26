@@ -46,16 +46,16 @@ defmodule NatsexTest.Parser do
       end do
         [
           {"service.requests", "inbox.66", "hello nats",
-          "PUB SERVICE.REQUESTS inbox.66 10\r\nhello nats\r\n"},
+          "PUB service.requests inbox.66 10\r\nhello nats\r\n"},
 
-          {"service.requests", nil, "hello nats",
-           "PUB SERVICE.REQUESTS 10\r\nhello nats\r\n"},
+          {"SERVICE.requests", nil, "hello nats",
+           "PUB SERVICE.requests 10\r\nhello nats\r\n"},
 
-          {"service.requests", nil, "",
-           "PUB SERVICE.REQUESTS 0\r\n\r\n"},
+          {"aBc.DDD", nil, "",
+           "PUB aBc.DDD 0\r\n\r\n"},
 
           {"service.requests", nil, "123\r\n5",
-           "PUB SERVICE.REQUESTS 6\r\n123\r\n5\r\n"},
+           "PUB service.requests 6\r\n123\r\n5\r\n"},
         ]
     end
   end

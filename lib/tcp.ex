@@ -11,7 +11,7 @@ defmodule Natsex.TCPConnector do
 
   @default_options config: %{},
                    connect_timeout: 200,
-                   ping_interval: 20_000
+                   ping_interval: 60_000
 
   @default_config %{
     host: "localhost",
@@ -27,10 +27,9 @@ defmodule Natsex.TCPConnector do
   @initial_state %{
     socket: nil,
     server_info: nil,
-    reader: %{
-      buffer: ""
-    },
+    buffer: "",
     subscibers: %{},
+
     config: nil,
     ping_interval: nil,
     pong_waiter: nil,
@@ -39,28 +38,22 @@ defmodule Natsex.TCPConnector do
   @pong_receive_timeout Application.get_env(:natsex, :pong_receive_timeout)
 
   @doc false
-  def get_state do
-    # used only for tests
-    GenServer.call(:natsex_connector, :state)
+  def subscribe(pid, subject, who, sid \\ nil, queue_group \\ nil) do
+    GenServer.call(pid, {:subscribe, who, subject, sid, queue_group})
   end
 
   @doc false
-  def subscribe(subject, who, sid \\ nil, queue_group \\ nil) do
-    GenServer.call(:natsex_connector, {:subscribe, who, subject, sid, queue_group})
+  def unsubscribe(pid, sid, max_messages \\ nil) do
+    GenServer.cast(pid, {:unsubscribe, sid, max_messages})
   end
 
   @doc false
-  def unsubscribe(sid, max_messages \\ nil) do
-    GenServer.cast(:natsex_connector, {:unsubscribe, sid, max_messages})
+  def publish(pid, subject, payload \\ "", reply \\ nil, timeout \\ 5_000) do
+    GenServer.call(pid, {:publish, subject, reply, payload}, timeout)
   end
 
   @doc false
-  def publish(subject, payload \\ "", reply \\ nil) do
-    GenServer.call(:natsex_connector, {:publish, subject, reply, payload})
-  end
-
-  @doc false
-  def request(subject, payload, timeout \\ 1000) do
+  def request(pid, subject, payload, timeout \\ 1000) do
     reply_inbox = "inbox." <> UUID.uuid4()
 
     waiter_task = Task.async(fn ->
@@ -70,12 +63,12 @@ defmodule Natsex.TCPConnector do
       end
     end)
 
-    reply_sid = subscribe(reply_inbox, waiter_task.pid)
-    :ok = publish(subject, payload, reply_inbox)
+    reply_sid = subscribe(pid, reply_inbox, waiter_task.pid)
+    :ok = publish(pid, subject, payload, reply_inbox)
 
     case Task.yield(waiter_task, timeout) || Task.shutdown(waiter_task) do
       nil ->
-        unsubscribe(reply_sid)
+        unsubscribe(pid, reply_sid)
         :timeout
 
       {:ok, _} = resp ->
@@ -83,29 +76,28 @@ defmodule Natsex.TCPConnector do
     end
   end
 
-  def stop do
-    GenServer.stop(:natsex_connector)
+  def stop(pid) do
+    GenServer.stop(pid)
   end
 
   def start_link(opts) do
-    GenServer.start_link(__MODULE__, opts, name: :natsex_connector)
+    GenServer.start_link(__MODULE__, opts)
   end
 
   def init(opts) do
     opts = Keyword.merge(@default_options, opts)
     config = Map.merge(@default_config, opts[:config])
 
-    Logger.debug("Connecting to server ..., config: #{inspect config}")
+    Logger.debug("Connecting to server, config: #{inspect config}")
 
     case :gen_tcp.connect(to_charlist(config.host), config.port,
-                          [:binary, active: :once],
+                          [:binary, active: false],
                           opts[:connect_timeout]) do
       {:ok, socket} ->
         {:ok, %{@initial_state |
-          socket: socket,
-          config: config,
-          ping_interval: opts[:ping_interval]
-        }}
+                socket: socket,
+                config: config,
+                ping_interval: opts[:ping_interval]}, 0}
 
       {:error, reason} ->
         {:stop, reason}
@@ -123,8 +115,7 @@ defmodule Natsex.TCPConnector do
 
     sid = if sid, do: sid, else: UUID.uuid4()
     msg = Parser.create_message("SUB", [subject, queue_group, sid])
-    Logger.debug "Subscribe: #{inspect msg}"
-    :gen_tcp.send(state.socket, msg)
+    send_to_server(state.socket, msg)
 
     {:reply, sid, %{state| subscibers: Map.put(subscibers, sid, who)}}
   end
@@ -139,8 +130,7 @@ defmodule Natsex.TCPConnector do
       state}
     else
       msg = Parser.command_publish(subject, reply_to, payload)
-      Logger.debug "Publish command: #{inspect msg}"
-      :gen_tcp.send(state.socket, msg)
+      send_to_server(state.socket, msg)
 
       {:reply, :ok, state}
     end
@@ -148,31 +138,38 @@ defmodule Natsex.TCPConnector do
 
   def handle_cast({:unsubscribe, sid, max_messages}, state) do
     msg = Parser.create_message("UNSUB", [sid, max_messages])
-    Logger.debug "Unsubscibe command: #{inspect msg}"
-    :gen_tcp.send(state.socket, msg)
+    send_to_server(state.socket, msg)
 
     {:noreply, state}
   end
 
-  def handle_info(
-    {:tcp, socket, msg},
-    %{socket: socket, reader: reader} = state) do
-
+  @doc """
+  Post init func
+  """
+  def handle_info(:timeout, %{socket: socket} = state) do
+    {:ok, info_msg} = :gen_tcp.recv(socket, 0)
+    Logger.debug("<- #{inspect info_msg}")
+    server_info = process_info_message(info_msg, state)
     :inet.setopts(socket, active: :once)
 
-    Logger.debug "TCP -> #{inspect msg}"
+    {:noreply, %{state| server_info: server_info}}
+  end
 
-    {rest_buffer, commands} = CommandEater.feed(reader.buffer <> msg)
+  def handle_info({:tcp, socket, msg}, %{socket: socket} = state) do
+    :inet.setopts(socket, active: :once)
+
+    Logger.debug "<- #{inspect msg}"
+
+    {rest_buffer, commands} = CommandEater.feed(state.buffer <> msg)
     for command <- commands do
       case command do
         "PING" ->
-          send(self(), :server_ping)
+          send_to_server(state.socket, Parser.create_message("PONG"))
 
         "+OK" ->
           :ok
 
         "PONG" ->
-          Logger.debug("server: PONG")
           send(state.pong_waiter, :pong)
           :pong
 
@@ -188,53 +185,12 @@ defmodule Natsex.TCPConnector do
       end
     end
 
-    {:noreply, %{state| reader: %{buffer: rest_buffer}}}
+    {:noreply, %{state| buffer: rest_buffer}}
   end
 
-  def handle_info({:server_info, data_str}, state) do
-    {"INFO", server_info} = Parser.parse_json_response(data_str)
-    Logger.debug("Connected")
-
-    send(self(), :connect)
-
+  def handle_info({:server_info, info_msg}, state) do
+    server_info = process_info_message(info_msg, state)
     {:noreply, %{state| server_info: server_info}}
-  end
-
-  def handle_info(
-    :connect,
-    %{server_info: server_info, config: config} = state) do
-
-    connect_data = %{
-      verbose: config.verbose, lang: "elixir", name: "natsex",
-      version: Natsex.MixProject.project()[:version],
-      pedantic: config.pedantic, tls_required: config.tls_required,
-      protocol: 0
-    }
-
-    connect_data =
-      if server_info.auth_required do
-        Map.merge(connect_data, %{
-          user: config.user, pass: config.pass, auth_token: config.auth_token
-        })
-      else
-        connect_data
-      end
-
-    msg = Parser.create_json_command("CONNECT", connect_data)
-    :gen_tcp.send(state.socket, msg)
-    Logger.debug "<- #{inspect msg}"
-
-    Process.send_after(self(), :keep_alive, state.ping_interval)
-
-    {:noreply, %{state| server_info: server_info}}
-  end
-
-  def handle_info(:server_ping, %{socket: socket} = state) do
-    Logger.debug("server send PING")
-    :gen_tcp.send(socket, Parser.create_message("PONG"))
-    Logger.debug "sent PONG"
-
-    {:noreply, state}
   end
 
   def handle_info(
@@ -275,8 +231,7 @@ defmodule Natsex.TCPConnector do
       Process.send_after(natsex_pid, :keep_alive, state.ping_interval)
     end)
 
-    :gen_tcp.send(state.socket, Parser.create_message("PING"))
-    Logger.debug("client: PING")
+    send_to_server(state.socket, Parser.create_message("PING"))
 
     {:noreply, %{state| pong_waiter: pong_waiter}}
   end
@@ -284,5 +239,38 @@ defmodule Natsex.TCPConnector do
   def handle_info(:keep_alive_timeout, state) do
     Logger.error("Server didn't respond on PING command")
     {:noreply, state}
+  end
+
+  defp send_to_server(sock, msg) do
+    :gen_tcp.send(sock, msg)
+    Logger.debug("-> #{inspect msg}")
+  end
+
+  defp process_info_message(data_str, %{config: config} = state) do
+    {"INFO", server_info} = Parser.parse_json_response(data_str)
+
+    connect_data = %{
+      verbose: config.verbose, lang: "elixir", name: "natsex",
+      version: Natsex.MixProject.project()[:version],
+      pedantic: config.pedantic, tls_required: config.tls_required,
+      protocol: 0
+    }
+
+    connect_data =
+      if server_info.auth_required do
+        Map.merge(connect_data, %{
+          user: config.user, pass: config.pass, auth_token: config.auth_token
+        })
+      else
+        connect_data
+      end
+
+    msg = Parser.create_json_command("CONNECT", connect_data)
+    send_to_server(state.socket, msg)
+    Logger.debug("Connected")
+
+    Process.send_after(self(), :keep_alive, state.ping_interval)
+
+    server_info
   end
 end

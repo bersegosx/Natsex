@@ -1,10 +1,6 @@
 defmodule MockServer do
   use GenServer
 
-  def get_state(pid) do
-    GenServer.call(pid, :state)
-  end
-
   def send_data(pid, data) do
     GenServer.cast(pid, {:send, data})
   end
