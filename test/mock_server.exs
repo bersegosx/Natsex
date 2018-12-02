@@ -33,12 +33,13 @@ defmodule MockServer do
   end
 
   def handle_cast({:send, data}, state) do
+    IO.inspect(data, label: "->")
     :gen_tcp.send(state.socket, data)
     {:noreply, state}
   end
 
   def handle_cast(:reset_buffer, state) do
-    IO.inspect "reset_buffer"
+    IO.inspect "reset_buffer", label: "cmd"
     {:noreply, %{state| buffer: ""}}
   end
 
@@ -48,7 +49,7 @@ defmodule MockServer do
   end
 
   def handle_info({:tcp, _socket, packet}, state) do
-    IO.inspect packet, label: "incoming packet"
+    IO.inspect packet, label: "<-"
     {:noreply, %{state| buffer: state.buffer <> packet}}
   end
 

@@ -29,6 +29,7 @@ defmodule Natsex do
     - `:config` - Map that contains connection options (auth, host, port, etc)
     - `:connect_timeout` - Timeout for NATS server connection (default: 200 ms)
     - `:ping_interval` - interval for ping/pong  keep-alive mechanism (default: 60_000 ms)
+    - `:reconnect_time_wait` - timeout for reconnect (default: 1_000 ms)
 
   ## Examples
 

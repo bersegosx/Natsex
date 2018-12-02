@@ -3,53 +3,57 @@ defmodule Natsex.TCPConnector do
   Heart of Natsex
   """
 
-  use GenServer
+  use Connection
   require Logger
 
   alias Natsex.Parser
   alias Natsex.CommandEater
 
-  @default_options config: %{},
-                   connect_timeout: 200,
-                   ping_interval: 60_000
-
-  @default_config %{
-    host: "localhost",
-    port: 4222,
-    verbose: true,
-    tls_required: false,
-    pedantic: true,
-    user: nil,
-    pass: nil,
-    auth_token: nil
-  }
-
   @initial_state %{
+    connection: :disconnected,
+
     socket: nil,
     server_info: nil,
     buffer: "",
-    subscibers: %{},
-
-    config: nil,
-    ping_interval: nil,
+    subscribers: %{},
+    subscribers_monitor: %{},
     pong_waiter: nil,
+    ping_timer_ref: nil,
+
+    config: %{
+      host: "localhost",
+      port: 4222,
+      verbose: true,
+      tls_required: false,
+      pedantic: true,
+      user: nil,
+      pass: nil,
+      auth_token: nil
+    },
+
+    opts: %{
+      connect_timeout: 200,
+      ping_interval: 60_000,
+      allow_reconnect: true,
+      reconnect_time_wait: 1_000
+    }
   }
 
   @pong_receive_timeout Application.get_env(:natsex, :pong_receive_timeout)
 
   @doc false
   def subscribe(pid, subject, who, sid \\ nil, queue_group \\ nil) do
-    GenServer.call(pid, {:subscribe, who, subject, sid, queue_group})
+    Connection.call(pid, {:subscribe, who, subject, sid, queue_group})
   end
 
   @doc false
   def unsubscribe(pid, sid, max_messages \\ nil) do
-    GenServer.cast(pid, {:unsubscribe, sid, max_messages})
+    Connection.cast(pid, {:unsubscribe, sid, max_messages})
   end
 
   @doc false
   def publish(pid, subject, payload \\ "", reply \\ nil, timeout \\ 5_000) do
-    GenServer.call(pid, {:publish, subject, reply, payload}, timeout)
+    Connection.call(pid, {:publish, subject, reply, payload}, timeout)
   end
 
   @doc false
@@ -81,43 +85,64 @@ defmodule Natsex.TCPConnector do
   end
 
   def start_link(opts) do
-    GenServer.start_link(__MODULE__, opts)
+    Connection.start_link(__MODULE__, opts)
   end
 
   def init(opts) do
-    opts = Keyword.merge(@default_options, opts)
-    config = Map.merge(@default_config, opts[:config])
+    opts = Map.merge(@initial_state.opts, Enum.into(opts, %{}))
+    {opts_config, opts} = Map.pop(opts, :config, %{})
+    config = Map.merge(@initial_state.config, opts_config)
 
-    Logger.debug("Connecting to server, config: #{inspect config}")
+    {:connect, :init, %{@initial_state| config: config, opts: opts}}
+  end
 
-    case :gen_tcp.connect(to_charlist(config.host), config.port,
-                          [:binary, active: false],
-                          opts[:connect_timeout]) do
-      {:ok, socket} ->
-        {:ok, %{@initial_state |
-                socket: socket,
-                config: config,
-                ping_interval: opts[:ping_interval]}, 0}
+  def connect(info, %{config: config} = state) do
+    Logger.debug("Connecting to server, config: #{inspect config}, info: #{inspect info}")
+    state = %{state| connection: :disconnected}
 
+    with {:ok, socket} <- :gen_tcp.connect(to_charlist(config.host), config.port,
+                            [:binary, active: false],
+                            state.opts.connect_timeout),
+         {:ok, info_msg} <- :gen_tcp.recv(socket, 0) do
+
+      Logger.debug("<- #{inspect info_msg}")
+
+      state = %{state| socket: socket}
+      {server_info, ping_ref} = process_info_message(info_msg, state)
+      :inet.setopts(socket, active: :once)
+
+      {:ok, %{state|
+              connection: :connected,
+              server_info: server_info,
+              ping_timer_ref: ping_ref}}
+    else
       {:error, reason} ->
-        {:stop, reason}
+        if state.opts.allow_reconnect do
+          {:backoff, state.opts.reconnect_time_wait, state}
+        else
+          {:stop, reason, state}
+        end
     end
   end
 
-  def handle_call(:state, _from, state) do
-    {:reply, state, state}
+  def handle_call(_, _, %{connection: :disconnected} = state) do
+    {:reply, {:error, :disconnected}, state}
   end
 
   def handle_call(
     {:subscribe, who, subject, sid, queue_group},
     _from,
-    %{subscibers: subscibers} = state) do
+    %{subscribers: subscribers, subscribers_monitor: monitors} = state) do
 
     sid = if sid, do: sid, else: UUID.uuid4()
     msg = Parser.create_message("SUB", [subject, queue_group, sid])
+    monitor_ref = Process.monitor(who)
+
     send_to_server(state.socket, msg)
 
-    {:reply, sid, %{state| subscibers: Map.put(subscibers, sid, who)}}
+    {:reply, sid, %{state|
+                    subscribers: Map.put(subscribers, sid, who),
+                    subscribers_monitor: Map.put(monitors, monitor_ref, sid)}}
   end
 
   def handle_call({:publish, subject, reply_to, payload}, _from, state) do
@@ -141,18 +166,6 @@ defmodule Natsex.TCPConnector do
     send_to_server(state.socket, msg)
 
     {:noreply, state}
-  end
-
-  @doc """
-  Post init func
-  """
-  def handle_info(:timeout, %{socket: socket} = state) do
-    {:ok, info_msg} = :gen_tcp.recv(socket, 0)
-    Logger.debug("<- #{inspect info_msg}")
-    server_info = process_info_message(info_msg, state)
-    :inet.setopts(socket, active: :once)
-
-    {:noreply, %{state| server_info: server_info}}
   end
 
   def handle_info({:tcp, socket, msg}, %{socket: socket} = state) do
@@ -189,13 +202,13 @@ defmodule Natsex.TCPConnector do
   end
 
   def handle_info({:server_info, info_msg}, state) do
-    server_info = process_info_message(info_msg, state)
-    {:noreply, %{state| server_info: server_info}}
+    {server_info, ping_ref} = process_info_message(info_msg, state)
+    {:noreply, %{state| server_info: server_info, ping_timer_ref: ping_ref}}
   end
 
   def handle_info(
     {:server_msg, message_header, message_body},
-    %{subscibers: subscibers} = state) do
+    %{subscribers: subscribers} = state) do
 
     Logger.debug "New message: #{message_header}, body: #{inspect message_body}"
 
@@ -213,7 +226,7 @@ defmodule Natsex.TCPConnector do
       Process.exit(self(), :message_body_length_mismatch)
     end
 
-    send(subscibers[sid], {:natsex_message, {subject, sid, reply_to}, message_body})
+    send(subscribers[sid], {:natsex_message, {subject, sid, reply_to}, message_body})
 
     {:noreply, state}
   end
@@ -228,7 +241,7 @@ defmodule Natsex.TCPConnector do
         @pong_receive_timeout -> send(natsex_pid, :keep_alive_timeout)
       end
 
-      Process.send_after(natsex_pid, :keep_alive, state.ping_interval)
+      Process.send_after(natsex_pid, :keep_alive, state.opts.ping_interval)
     end)
 
     send_to_server(state.socket, Parser.create_message("PING"))
@@ -240,6 +253,32 @@ defmodule Natsex.TCPConnector do
     Logger.error("Server didn't respond on PING command")
     {:noreply, state}
   end
+
+  def handle_info({:tcp_closed, _sock}, state) do
+    Process.cancel_timer(state.ping_timer_ref)
+    {:connect, :tcp_closed, %{state| ping_timer_ref: nil}}
+  end
+
+  def handle_info({:DOWN, ref, :process, _object, _reason}, state) do
+    Logger.debug(":DOWN")
+
+    {sid, monitors} = Map.pop(state.subscribers_monitor, ref)
+    {_, subscribers} = Map.pop(state.subscribers, sid)
+
+    if sid do
+      send_to_server(state.socket, Parser.create_message("UNSUB", [sid]))
+    end
+
+    {:noreply, %{state| subscribers_monitor: monitors,
+                        subscribers: subscribers}}
+  end
+
+  def terminate(_reason, %{connection: :connected, subscribers: subscribers} = state) do
+    Enum.map(subscribers, fn ({sid, _who}) ->
+      send_to_server(state.socket, Parser.create_message("UNSUB", [sid]))
+    end)
+  end
+  def terminate(_, _) do end
 
   defp send_to_server(sock, msg) do
     :gen_tcp.send(sock, msg)
@@ -269,8 +308,8 @@ defmodule Natsex.TCPConnector do
     send_to_server(state.socket, msg)
     Logger.debug("Connected")
 
-    Process.send_after(self(), :keep_alive, state.ping_interval)
+    ping_ref = Process.send_after(self(), :keep_alive, state.opts.ping_interval)
 
-    server_info
+    {server_info, ping_ref}
   end
 end
