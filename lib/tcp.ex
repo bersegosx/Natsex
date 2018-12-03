@@ -116,11 +116,11 @@ defmodule Natsex.TCPConnector do
               server_info: server_info,
               ping_timer_ref: ping_ref}}
     else
-      {:error, reason} ->
+      {:error, _reason} ->
         if state.opts.allow_reconnect do
           {:backoff, state.opts.reconnect_time_wait, state}
         else
-          {:stop, reason, state}
+          {:stop, :normal, state}
         end
     end
   end

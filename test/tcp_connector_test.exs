@@ -10,8 +10,10 @@ defmodule NatsexTest.TCPConnector do
     if context[:dont_autostart] == true do
       :ok
     else
-      {:ok, mock_pid} = MockServer.start_link
-      {:ok, natsex_pid} = Natsex.start_link
+      natsex_params = Map.get(context, :start_params, [])
+
+      {:ok, mock_pid} = MockServer.start_link()
+      {:ok, natsex_pid} = Natsex.start_link(natsex_params)
 
       %{mock_pid: mock_pid, natsex_pid: natsex_pid}
     end
@@ -52,12 +54,11 @@ defmodule NatsexTest.TCPConnector do
       assert publish_func.()
     end
 
-    @tag :dont_autostart
-    test "will connect with auth credentials", _context do
-      {:ok, mock_pid} = MockServer.start_link
-      {login, password} = {"admin", "123"}
-      {:ok, natsex_pid} = Natsex.start_link(config: %{user: login, pass: password})
+    @tag start_params: [config: %{user: "admin", pass: "123"}]
+    test "will connect with auth credentials", context do
+      %{mock_pid: mock_pid, natsex_pid: natsex_pid} = context
 
+      {login, password} = {"admin", "123"}
       MockServer.send_data(mock_pid, "INFO {\"auth_required\":true,\"max_payload\":1048576} \r\n")
       :timer.sleep(50)
 
@@ -70,19 +71,9 @@ defmodule NatsexTest.TCPConnector do
              server_state.buffer =~ ~s("pass":"#{password}")
     end
 
-    test "will stop", context do
+    @tag start_params: [reconnect_time_wait: @reconnect_time_wait]
+    test "will reconnect", context do
       %{mock_pid: mock_pid, natsex_pid: natsex_pid} = context
-      conect_client(mock_pid)
-
-      assert Natsex.stop(natsex_pid) == :ok
-      assert Process.alive?(natsex_pid) == false
-    end
-
-    @tag :dont_autostart
-    test "will reconnect" do
-      {:ok, mock_pid} = MockServer.start_link
-      {:ok, natsex_pid} = Natsex.start_link(reconnect_time_wait: @reconnect_time_wait)
-
       conect_client(mock_pid)
 
       natsex_state = :sys.get_state(natsex_pid).mod_state
@@ -104,44 +95,65 @@ defmodule NatsexTest.TCPConnector do
       natsex_state = :sys.get_state(natsex_pid).mod_state
       assert natsex_state.connection == :connected
     end
+
+    test "cant call commands while recconnect", context do
+      %{mock_pid: mock_pid, natsex_pid: natsex_pid} = context
+      conect_client(mock_pid)
+
+      # server was stopped
+      :ok = GenServer.stop(mock_pid)
+      :timer.sleep(50)
+
+      assert {:error, :disconnected} == Natsex.publish(natsex_pid, "subject")
+    end
+  end
+
+  describe "Natsex.stop" do
+    test "will stop", context do
+      %{mock_pid: mock_pid, natsex_pid: natsex_pid} = context
+      conect_client(mock_pid)
+
+      assert Natsex.stop(natsex_pid) == :ok
+      assert Process.alive?(natsex_pid) == false
+    end
+
+    @tag start_params: [allow_reconnect: false]
+    test "option: allow_reconnect=false", context do
+      %{mock_pid: mock_pid, natsex_pid: natsex_pid} = context
+      conect_client(mock_pid)
+
+      GenServer.stop(mock_pid)
+      :timer.sleep(50)
+      assert Process.alive?(natsex_pid) == false
+    end
   end
 
   describe "keep_alive" do
-    @tag :dont_autostart
-    test "will respond on ping", _context do
-      {:ok, mock_pid} = MockServer.start_link
-      Natsex.start_link
+    test "will respond on ping", %{mock_pid: mock_pid} do
       conect_client(mock_pid)
 
       MockServer.send_data(mock_pid, "PING\r\n")
 
-      :timer.sleep(50)
+      :timer.sleep(150)
       server_state = :sys.get_state(mock_pid)
       assert "PONG\r\n" == server_state.buffer
     end
 
-    @tag :dont_autostart
-    test "will send ping", _context do
-      {:ok, mock_pid} = MockServer.start_link
-
-      ping_interval = 50
-      Natsex.start_link(connect_timeout: 200, ping_interval: ping_interval)
+    @tag start_params: [connect_timeout: 200, ping_interval: 50]
+    test "will send ping", %{mock_pid: mock_pid} do
       conect_client(mock_pid)
 
       # check after `ping_interval`
+      ping_interval = 50
       :timer.sleep(ping_interval + 50)
 
       server_state = :sys.get_state(mock_pid)
       assert "PING\r\n" == server_state.buffer
     end
 
-    @tag :dont_autostart
-    test "will log if `PONG` didn't receive after timeout", _context do
-      {:ok, mock_pid} = MockServer.start_link
-
-      # starts client with new params
-      ping_interval = 50
-      Natsex.start_link(connect_timeout: 200, ping_interval: ping_interval)
+    @tag start_params: [connect_timeout: 200, ping_interval: 50]
+    test "will log if `PONG` didn't receive after timeout", context do
+      %{mock_pid: mock_pid} = context
       conect_client(mock_pid)
 
       pong_receive_timeout = Application.get_env(:natsex, :pong_receive_timeout)
@@ -197,6 +209,26 @@ defmodule NatsexTest.TCPConnector do
       assert natsex_state.subscribers == %{}
       assert "UNSUB " <> sid <> "\r\n" == server_state.buffer
     end
+
+    test "send `UNSUB` on terminate", context do
+      %{mock_pid: mock_pid, natsex_pid: natsex_pid} = context
+      conect_client(mock_pid)
+
+      sid = Natsex.subscribe(natsex_pid, "The.X.files", self())
+      sid2 = Natsex.subscribe(natsex_pid, "TwinPeaks", self())
+
+      MockServer.reset_buffer(mock_pid)
+      :timer.sleep(50)
+
+      Natsex.stop(natsex_pid)
+      :timer.sleep(50)
+
+      assert Process.alive?(natsex_pid) == false
+
+      server_state = :sys.get_state(mock_pid)
+      assert server_state.buffer =~ "UNSUB #{sid}\r\n" and
+             server_state.buffer =~ "UNSUB #{sid2}\r\n"
+    end
   end
 
   describe "publish command" do
@@ -237,5 +269,16 @@ defmodule NatsexTest.TCPConnector do
       expected = "UNSUB x123x\r\n"
       assert server_state.buffer == expected
     end
+  end
+
+  test "Received `ERR` command", %{mock_pid: mock_pid} do
+    conect_client(mock_pid)
+
+    error_msg = "Some error"
+    MockServer.send_data(mock_pid, "-ERR '#{error_msg}'\r\n")
+
+    assert capture_log(fn ->
+      :timer.sleep(100)
+    end) =~ "received -ERR: #{error_msg}"
   end
 end
