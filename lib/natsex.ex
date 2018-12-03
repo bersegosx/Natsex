@@ -99,11 +99,11 @@ defmodule Natsex do
       :timeout = Natsex.request(pid, "questions", "sup?", 10_000)
 
   """
-  defdelegate request(pid, subject, payload, timeout \\ 1000), to: Natsex.TCPConnector
+  defdelegate request(pid, subject, payload, timeout \\ 1000,
+                      reply_inbox \\ nil), to: Natsex.TCPConnector
 
   @doc """
   Stop client
   """
   defdelegate stop(pid), to: Natsex.TCPConnector
-
 end

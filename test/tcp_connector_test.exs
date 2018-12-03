@@ -271,6 +271,49 @@ defmodule NatsexTest.TCPConnector do
     end
   end
 
+  describe "`request` method" do
+    test "will receive response", context do
+      %{mock_pid: mock_pid, natsex_pid: natsex_pid} = context
+      conect_client(mock_pid)
+
+      {waiter_subject, message, answer} = {"remote", "hello", "hello_echo"}
+
+      spawn_link(fn ->
+        sid = Natsex.subscribe(natsex_pid, waiter_subject, self(), "wsid")
+        receive do
+          {:natsex_message, {^waiter_subject, ^sid, reply}, ^message} ->
+            Natsex.publish(natsex_pid, reply, answer)
+        end
+        :timer.sleep(500)
+      end)
+
+      timeout = 1000
+      rq_task = Task.async(fn ->
+        Natsex.request(natsex_pid, waiter_subject, message, timeout, "reply_inbox")
+      end)
+
+      packet = "MSG #{waiter_subject} wsid reply_inbox #{byte_size(message)}\r\n" <>
+               "#{message}\r\n"
+      MockServer.send_data(mock_pid, packet)
+      :timer.sleep(100)
+
+      request_reply = "PUB reply_inbox 10\r\n#{answer}\r\n"
+      server_state = :sys.get_state(mock_pid)
+      assert server_state.buffer =~ request_reply
+
+      natsex_state = :sys.get_state(natsex_pid).mod_state
+      sub_sid =
+        natsex_state.subscribers
+        |> Map.keys
+        |> List.first
+
+      MockServer.send_data(mock_pid, "MSG reply_inbox #{sub_sid} 10\r\n#{answer}\r\n")
+      :timer.sleep(50)
+
+      assert Task.await(rq_task, timeout) == {:ok, answer}
+    end
+  end
+
   test "Received `ERR` command", %{mock_pid: mock_pid} do
     conect_client(mock_pid)
 

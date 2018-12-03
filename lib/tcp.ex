@@ -57,8 +57,8 @@ defmodule Natsex.TCPConnector do
   end
 
   @doc false
-  def request(pid, subject, payload, timeout \\ 1000) do
-    reply_inbox = "inbox." <> UUID.uuid4()
+  def request(pid, subject, payload, timeout \\ 1000, reply_inbox \\ nil) do
+    reply_inbox = if reply_inbox, do: reply_inbox, else: "inbox." <> UUID.uuid4()
 
     waiter_task = Task.async(fn ->
       receive do
@@ -259,8 +259,8 @@ defmodule Natsex.TCPConnector do
     {:connect, :tcp_closed, %{state| ping_timer_ref: nil}}
   end
 
-  def handle_info({:DOWN, ref, :process, _object, _reason}, state) do
-    Logger.debug(":DOWN")
+  def handle_info({:DOWN, ref, :process, _object, reason}, state) do
+    Logger.debug(reason, label: ":DOWN")
 
     {sid, monitors} = Map.pop(state.subscribers_monitor, ref)
     {_, subscribers} = Map.pop(state.subscribers, sid)
