@@ -183,6 +183,11 @@ defmodule NatsexTest.TCPConnector do
       assert_receive {:natsex_message, {^subject, ^sid, nil}, ^message}
     end
 
+    test "inccorect subject", %{natsex_pid: natsex_pid} do
+      assert Natsex.subscribe(natsex_pid, ".qwe", self()) ==
+            {:error, "Can't starts/ends with '.' char"}
+    end
+
     test "will monitor client & unsub", context do
       %{mock_pid: mock_pid, natsex_pid: natsex_pid} = context
       conect_client(mock_pid)
@@ -244,6 +249,14 @@ defmodule NatsexTest.TCPConnector do
       expected = "PUB #{subject} #{String.length(payload)}\r\n" <>
                  "#{payload}\r\n"
       assert server_state.buffer == expected
+    end
+
+    test "inccorect subject && reply_to", %{natsex_pid: natsex_pid} do
+      assert Natsex.publish(natsex_pid, "a b", "payload") ==
+            {:error, "Whitespace isn't allowed"}
+
+      assert Natsex.publish(natsex_pid, "a.b", "payload", "reply_to.") ==
+            {:error, "Can't starts/ends with '.' char"}
     end
 
     test "big message", context do

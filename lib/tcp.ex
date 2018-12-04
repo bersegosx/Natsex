@@ -8,6 +8,7 @@ defmodule Natsex.TCPConnector do
 
   alias Natsex.Parser
   alias Natsex.CommandEater
+  alias Natsex.Validator
 
   @initial_state %{
     connection: :disconnected,
@@ -43,7 +44,12 @@ defmodule Natsex.TCPConnector do
 
   @doc false
   def subscribe(pid, subject, who, sid \\ nil, queue_group \\ nil) do
-    Connection.call(pid, {:subscribe, who, subject, sid, queue_group})
+    case Validator.is_valid(subject) do
+      :ok ->
+        Connection.call(pid, {:subscribe, who, subject, sid, queue_group})
+      error ->
+        {:error, error}
+    end
   end
 
   @doc false
@@ -53,7 +59,13 @@ defmodule Natsex.TCPConnector do
 
   @doc false
   def publish(pid, subject, payload \\ "", reply \\ nil, timeout \\ 5_000) do
-    Connection.call(pid, {:publish, subject, reply, payload}, timeout)
+    with :ok <- Validator.is_valid(subject),
+         :ok <- Validator.is_valid(reply, true) do
+        Connection.call(pid, {:publish, subject, reply, payload}, timeout)
+    else
+      error ->
+        {:error, error}
+    end
   end
 
   @doc false
