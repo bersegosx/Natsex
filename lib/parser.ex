@@ -2,6 +2,7 @@ defmodule Natsex.Parser do
   @moduledoc """
   NATS protocol parser/serializer
   """
+  
   require Logger
 
   @message_end "\r\n"

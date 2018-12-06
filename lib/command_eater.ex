@@ -2,6 +2,7 @@ defmodule Natsex.CommandEater do
   @moduledoc """
   Splits incoming buffer into commands
   """
+  
   @message_end "\r\n"
   @word_commands ~w(+OK PING PONG)
   @line_commands ["INFO ", "-ERR ", "PUB ", "SUB "]
@@ -36,6 +37,7 @@ defmodule Natsex.CommandEater do
       {"", buffer}
     end
   end
+
   defp eat(buffer) do
     if String.starts_with?(buffer, @word_commands ++ @line_commands) and
        buffer =~ @message_end do
@@ -46,5 +48,4 @@ defmodule Natsex.CommandEater do
       {"", buffer}
     end
   end
-
 end

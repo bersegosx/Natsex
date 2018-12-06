@@ -6,9 +6,7 @@ defmodule Natsex.TCPConnector do
   use Connection
   require Logger
 
-  alias Natsex.Parser
-  alias Natsex.CommandEater
-  alias Natsex.Validator
+  alias Natsex.{Parser, CommandEater, Validator}
 
   @initial_state %{
     connection: :disconnected,
@@ -308,7 +306,7 @@ defmodule Natsex.TCPConnector do
     }
 
     connect_data =
-      if server_info.auth_required do
+      if Map.get(server_info, :auth_required, false) do
         Map.merge(connect_data, %{
           user: config.user, pass: config.pass, auth_token: config.auth_token
         })
