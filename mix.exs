@@ -35,6 +35,7 @@ defmodule Natsex.MixProject do
       {:poison, "~> 3.1"},
       {:uuid, "~> 1.1"},
       {:connection, "~> 1.0"},
+      {:exprotobuf, "~> 1.2"},
 
       {:ex_doc, "~> 0.18.0", only: :dev, runtime: false},
       {:ex_parameterized, "~> 1.3.2", only: :test},
