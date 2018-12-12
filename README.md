@@ -7,6 +7,16 @@
 
 > Elixir client for [NATS](https://nats.io/)
 
+## Features
+
+- Pub/Sub
+- Request/Reply
+- Queueing
+- Keep-alive mechanism (via ping/pong)
+- Reconnection logic
+- TLS support
+- Raw [NATS Streaming support](https://github.com/bersegosx/Natsex/tree/feature/streaming)
+
 ## Installation
 
 The package can be installed by adding `natsex` to your list of dependencies in `mix.exs`:
@@ -60,6 +70,17 @@ iex(1)> Natsex.start_link(config: %{tls_required: true,
                                     cert_key: Path.expand("./client.key")})
 {:ok, #PID<0.195.0>}
 ```
+
+## TODO
+
+- [ ] String config (`nats://user:password@server:port`)
+- [ ] Set the Number of Reconnect Attempts
+- [ ] Cache outgoing data
+- [ ] Avoiding the Thundering Herd
+- [ ] Buffering Messages During Reconnect Attempts
+- [ ] Setting the Connection Name
+- [ ] Limit Outgoing Pings
+- [ ] Cluster support
 
 ## Documentation
 Docs can be found at [hexdocs][hexdocs].
