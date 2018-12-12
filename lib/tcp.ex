@@ -6,9 +6,7 @@ defmodule Natsex.TCPConnector do
   use Connection
   require Logger
 
-  alias Natsex.Parser
-  alias Natsex.CommandEater
-  alias Natsex.Validator
+  alias Natsex.{Parser, CommandEater, Validator, Transport}
 
   @initial_state %{
     connection: :disconnected,
@@ -110,25 +108,20 @@ defmodule Natsex.TCPConnector do
 
   def connect(info, %{config: config} = state) do
     Logger.debug("Connecting to server, config: #{inspect config}, info: #{inspect info}")
-    state = %{state| connection: :disconnected}
 
-    with {:ok, socket} <- :gen_tcp.connect(to_charlist(config.host), config.port,
-                            [:binary, active: false],
-                            state.opts.connect_timeout),
-         {:ok, info_msg} <- :gen_tcp.recv(socket, 0) do
+    # remove old ping timer
+    if state.ping_timer_ref do
+      Process.cancel_timer(state.ping_timer_ref)
+    end
+    state = %{state| connection: :disconnected, ping_timer_ref: nil}
 
-      Logger.debug("<- #{inspect info_msg}")
+    case Transport.connect(state, config) do
+      {:ok, _} = result ->
+        result
 
-      state = %{state| socket: socket}
-      {server_info, ping_ref} = process_info_message(info_msg, state)
-      :inet.setopts(socket, active: :once)
+      {:error, reason} ->
+        Logger.debug("Can't connect, reason: #{inspect reason}")
 
-      {:ok, %{state|
-              connection: :connected,
-              server_info: server_info,
-              ping_timer_ref: ping_ref}}
-    else
-      {:error, _reason} ->
         if state.opts.allow_reconnect do
           {:backoff, state.opts.reconnect_time_wait, state}
         else
@@ -150,7 +143,7 @@ defmodule Natsex.TCPConnector do
     msg = Parser.create_message("SUB", [subject, queue_group, sid])
     monitor_ref = Process.monitor(who)
 
-    send_to_server(state.socket, msg)
+    send_to_server(state, msg)
 
     {:reply, sid, %{state|
                     subscribers: Map.put(subscribers, sid, who),
@@ -167,7 +160,7 @@ defmodule Natsex.TCPConnector do
       state}
     else
       msg = Parser.command_publish(subject, reply_to, payload)
-      send_to_server(state.socket, msg)
+      send_to_server(state, msg)
 
       {:reply, :ok, state}
     end
@@ -175,21 +168,29 @@ defmodule Natsex.TCPConnector do
 
   def handle_cast({:unsubscribe, sid, max_messages}, state) do
     msg = Parser.create_message("UNSUB", [sid, max_messages])
-    send_to_server(state.socket, msg)
+    send_to_server(state, msg)
 
     {:noreply, state}
   end
 
   def handle_info({:tcp, socket, msg}, %{socket: socket} = state) do
     :inet.setopts(socket, active: :once)
+    handle_info({:new_transport_data, socket, msg}, state)
+  end
 
+  def handle_info({:ssl, socket, msg}, %{socket: socket} = state) do
+    :ssl.setopts(socket, active: :once)
+    handle_info({:new_transport_data, socket, msg}, state)
+  end
+
+  def handle_info({:new_transport_data, socket, msg}, %{socket: socket} = state) do
     Logger.debug "<- #{inspect msg}"
 
     {rest_buffer, commands} = CommandEater.feed(state.buffer <> msg)
     for command <- commands do
       case command do
         "PING" ->
-          send_to_server(state.socket, Parser.create_message("PONG"))
+          send_to_server(state, Parser.create_message("PONG"))
 
         "+OK" ->
           :ok
@@ -256,7 +257,7 @@ defmodule Natsex.TCPConnector do
       Process.send_after(natsex_pid, :keep_alive, state.opts.ping_interval)
     end)
 
-    send_to_server(state.socket, Parser.create_message("PING"))
+    send_to_server(state, Parser.create_message("PING"))
 
     {:noreply, %{state| pong_waiter: pong_waiter}}
   end
@@ -271,6 +272,10 @@ defmodule Natsex.TCPConnector do
     {:connect, :tcp_closed, %{state| ping_timer_ref: nil}}
   end
 
+  def handle_info({:ssl_closed, sock}, state) do
+    handle_info({:tcp_closed, sock}, state)
+  end
+
   def handle_info({:DOWN, ref, :process, _object, reason}, state) do
     Logger.debug(reason, label: ":DOWN")
 
@@ -278,7 +283,7 @@ defmodule Natsex.TCPConnector do
     {_, subscribers} = Map.pop(state.subscribers, sid)
 
     if sid do
-      send_to_server(state.socket, Parser.create_message("UNSUB", [sid]))
+      send_to_server(state, Parser.create_message("UNSUB", [sid]))
     end
 
     {:noreply, %{state| subscribers_monitor: monitors,
@@ -287,17 +292,16 @@ defmodule Natsex.TCPConnector do
 
   def terminate(_reason, %{connection: :connected, subscribers: subscribers} = state) do
     Enum.map(subscribers, fn ({sid, _who}) ->
-      send_to_server(state.socket, Parser.create_message("UNSUB", [sid]))
+      send_to_server(state, Parser.create_message("UNSUB", [sid]))
     end)
   end
   def terminate(_, _) do end
 
-  defp send_to_server(sock, msg) do
-    :gen_tcp.send(sock, msg)
-    Logger.debug("-> #{inspect msg}")
+  defp send_to_server(state, msg) do
+    Transport.send_to_server(state, msg)
   end
 
-  defp process_info_message(data_str, %{config: config} = state) do
+  def process_info_message(data_str, %{config: config} = state) do
     {"INFO", server_info} = Parser.parse_json_response(data_str)
 
     connect_data = %{
@@ -308,7 +312,7 @@ defmodule Natsex.TCPConnector do
     }
 
     connect_data =
-      if server_info.auth_required do
+      if Map.get(server_info, :auth_required, false) do
         Map.merge(connect_data, %{
           user: config.user, pass: config.pass, auth_token: config.auth_token
         })
@@ -317,7 +321,7 @@ defmodule Natsex.TCPConnector do
       end
 
     msg = Parser.create_json_command("CONNECT", connect_data)
-    send_to_server(state.socket, msg)
+    send_to_server(state, msg)
     Logger.debug("Connected")
 
     ping_ref = Process.send_after(self(), :keep_alive, state.opts.ping_interval)

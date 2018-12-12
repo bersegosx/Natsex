@@ -14,7 +14,7 @@ The package can be installed by adding `natsex` to your list of dependencies in 
 ```elixir
 def deps do
   [
-    {:natsex, "~> 0.7.2"}
+    {:natsex, "~> 0.8.0"}
   ]
 end
 ```
@@ -24,10 +24,14 @@ end
 ```elixir
 # connects with default params, host - "localhost", port - 4222
 iex(1)> {:ok, pid} = Natsex.start_link()
-{:ok, #PID<0.178.0>}
+{:ok, #PID<0.195.0>}
 
 # or connects on custom port with credentials
 iex(1)> {:ok, pid} = Natsex.start_link(config: %{host: "localhost", port: 4567, user: "admin", pass: "12345"})
+{:ok, #PID<0.195.0>}
+
+# or connects with tls
+iex(1)> Natsex.start_link(config: %{tls_required: true})
 {:ok, #PID<0.195.0>}
 
 iex(2)> Natsex.subscribe(pid, "telegram.user.notifications", self())

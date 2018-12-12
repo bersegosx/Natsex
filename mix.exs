@@ -4,7 +4,7 @@ defmodule Natsex.MixProject do
   def project do
     [
       app: :natsex,
-      version: "0.7.2",
+      version: "0.8.0",
       elixir: "~> 1.6",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -15,7 +15,7 @@ defmodule Natsex.MixProject do
       source_url: "https://github.com/bersegosx/Natsex",
 
       test_coverage: [tool: ExCoveralls],
-      preferred_cli_env: ["coveralls": :test],
+      preferred_cli_env: [coveralls: :test],
 
       docs: [
         main: "readme",
@@ -26,7 +26,7 @@ defmodule Natsex.MixProject do
 
   def application do
     [
-      extra_applications: [:logger]
+      extra_applications: [:logger, :ssl]
     ]
   end
 

@@ -337,4 +337,31 @@ defmodule NatsexTest.TCPConnector do
       :timer.sleep(100)
     end) =~ "received -ERR: #{error_msg}"
   end
+
+  describe "tls" do
+    @tag start_params: [config: %{tls_required: true}]
+    test "can connect and sends message", %{mock_pid: mock_pid, natsex_pid: natsex_pid} do
+      MockServer.send_data(mock_pid, "INFO {\"auth_required\":false,\"max_payload\":#{@max_payload}} \r\n")
+      MockServer.enable_tls(mock_pid)
+
+      :timer.sleep(150)
+      server_state = :sys.get_state(mock_pid)
+
+      assert server_state.buffer =~ "CONNECT " and
+             server_state.buffer =~ "\"tls_required\":true,"
+
+      MockServer.reset_buffer(mock_pid)
+      :timer.sleep(50)
+
+      {subject, payload} = {"tls.is.working", "v.1.2"}
+      :ok = Natsex.publish(natsex_pid, subject, payload)
+      :timer.sleep(50)
+
+      server_state = :sys.get_state(mock_pid)
+
+      expected = "PUB #{subject} #{String.length(payload)}\r\n" <>
+                  "#{payload}\r\n"
+      assert server_state.buffer == expected
+    end
+  end
 end
