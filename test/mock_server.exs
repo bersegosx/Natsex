@@ -3,6 +3,7 @@ defmodule MockServer do
 
   @cert "./test/cert/Nats.crt"
   @cert_key "./test/cert/Nats.key"
+  @cert_ca "./test/cert/SelfCA.crt"
 
   def send_data(pid, data) do
     GenServer.cast(pid, {:send, data})
@@ -12,8 +13,8 @@ defmodule MockServer do
     GenServer.cast(pid, :reset_buffer)
   end
 
-  def enable_tls(pid) do
-    GenServer.cast(pid, :enable_tls)
+  def enable_tls(pid, verify_client_cert \\ false) do
+    GenServer.call(pid, {:enable_tls, verify_client_cert})
   end
 
   def start_link do
@@ -25,8 +26,7 @@ defmodule MockServer do
   end
 
   def init(_) do
-    port = 4222
-    {:ok, listen_socket}= :gen_tcp.listen(port,
+    {:ok, listen_socket}= :gen_tcp.listen(4222,
       [:binary, packet: 0, active: true, reuseaddr: true]
     )
 
@@ -39,18 +39,33 @@ defmodule MockServer do
     {:reply, state, state}
   end
 
-  def handle_cast(:enable_tls, state) do
+  def handle_call({:enable_tls, verify_client_cert}, _from, state) do
     IO.inspect "enable_tls", label: "cmd"
     :inet.setopts(state.socket, active: false)
 
-    {:ok, ssl_socket} = ssl_handshake(state.socket, [
+    ssl_opts = [
       certfile: Path.expand(@cert),
-      keyfile: Path.expand(@cert_key)
-    ], 1_000)
+      keyfile: Path.expand(@cert_key),
+      cacertfile: Path.expand(@cert_ca)
+    ]
 
-    :ok = :ssl.setopts(ssl_socket, active: true)
+    ssl_opts =
+      if verify_client_cert do
+        Keyword.merge(ssl_opts, [verify: :verify_peer, fail_if_no_peer_cert: true])
+      else
+        ssl_opts
+      end
 
-    {:noreply, %{state| socket: ssl_socket}}
+    {reply, socket} =
+      with {:ok, ssl_socket} <- ssl_handshake(state.socket, ssl_opts, 1_000),
+           :ok <- :ssl.setopts(ssl_socket, active: true)
+      do
+        {:ok, ssl_socket}
+      else
+        err -> {err, nil}
+      end
+
+    {:reply, reply, %{state| socket: socket}}
   end
 
   def handle_cast({:send, data}, state) do

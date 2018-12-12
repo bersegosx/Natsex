@@ -49,6 +49,12 @@ defmodule Natsex do
       Natsex.start_link(config: %{tls_required: true})
       {:ok, #PID<>}
 
+      # connects with client cert
+      Natsex.start_link(config: %{tls_required: true,
+                                  cert: Path.expand("./cert.crt"),
+                                  cert_key: Path.expand("./client.key")})
+      {:ok, #PID<>}
+
   """
   defdelegate start_link(opt \\ []), to: Natsex.TCPConnector
 

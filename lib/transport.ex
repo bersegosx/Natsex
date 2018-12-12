@@ -27,8 +27,15 @@ defmodule Natsex.Transport do
   @doc """
   ssl handshake
   """
-  def setops(socket, %{config: %{tls_required: true}}) do
-    {:ok, ssl_socket} = :ssl.connect(socket, [])
+  def setops(socket, %{config: %{tls_required: true} = config}) do
+    ssl_opts =
+      if Map.get(config, :cert_path, false) do
+        [certfile: config.cert_path, keyfile: config.cert_key_path]
+      else
+        []
+      end
+
+    {:ok, ssl_socket} = :ssl.connect(socket, ssl_opts, 500)
     :ok = :ssl.setopts(ssl_socket, active: :once)
     ssl_socket
   end

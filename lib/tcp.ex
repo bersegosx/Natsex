@@ -22,9 +22,14 @@ defmodule Natsex.TCPConnector do
     config: %{
       host: "localhost",
       port: 4222,
-      verbose: true,
+
       tls_required: false,
+      cert_path: nil,
+      cert_key_path: nil,
+
+      verbose: true,
       pedantic: true,
+
       user: nil,
       pass: nil,
       auth_token: nil

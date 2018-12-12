@@ -6,6 +6,11 @@ defmodule NatsexTest.TCPConnector do
   @max_payload 500
   @reconnect_time_wait 100
 
+  @cert         Path.expand("./test/cert/Client.crt")
+  @cert_key     Path.expand("./test/cert/Client.key")
+  @bad_cert     Path.expand("./test/cert/bad-client-cert.pem")
+  @bad_cert_key Path.expand("./test/cert/bad-client-key.pem")
+
   setup context do
     if context[:dont_autostart] == true do
       :ok
@@ -297,7 +302,7 @@ defmodule NatsexTest.TCPConnector do
           {:natsex_message, {^waiter_subject, ^sid, reply}, ^message} ->
             Natsex.publish(natsex_pid, reply, answer)
         end
-        :timer.sleep(500)
+        :timer.sleep(800)
       end)
 
       timeout = 1000
@@ -334,13 +339,13 @@ defmodule NatsexTest.TCPConnector do
     MockServer.send_data(mock_pid, "-ERR '#{error_msg}'\r\n")
 
     assert capture_log(fn ->
-      :timer.sleep(100)
+      :timer.sleep(200)
     end) =~ "received -ERR: #{error_msg}"
   end
 
   describe "tls" do
     @tag start_params: [config: %{tls_required: true}]
-    test "can connect and sends message", %{mock_pid: mock_pid, natsex_pid: natsex_pid} do
+    test "can connect without client cert", %{mock_pid: mock_pid, natsex_pid: natsex_pid} do
       MockServer.send_data(mock_pid, "INFO {\"auth_required\":false,\"max_payload\":#{@max_payload}} \r\n")
       MockServer.enable_tls(mock_pid)
 
@@ -362,6 +367,29 @@ defmodule NatsexTest.TCPConnector do
       expected = "PUB #{subject} #{String.length(payload)}\r\n" <>
                   "#{payload}\r\n"
       assert server_state.buffer == expected
+    end
+
+    @tag start_params: [config: %{tls_required: true,
+                                  cert_path: @cert, cert_key_path: @cert_key}]
+    test "can connect with correct cert", context do
+      %{mock_pid: mock_pid} = context
+
+      MockServer.send_data(mock_pid, "INFO {\"auth_required\":false,\"max_payload\":#{@max_payload}} \r\n")
+      MockServer.enable_tls(mock_pid, true)
+
+      :timer.sleep(150)
+      server_state = :sys.get_state(mock_pid)
+
+      assert server_state.buffer =~ "CONNECT " and
+             server_state.buffer =~ "\"tls_required\":true,"
+    end
+
+    @tag start_params: [config: %{tls_required: true,
+                                  cert_path: @bad_cert, cert_key_path: @bad_cert_key}]
+    test "can't connect with wrong cert", %{mock_pid: mock_pid} do
+      MockServer.send_data(mock_pid, "INFO {\"auth_required\":false,\"max_payload\":#{@max_payload}} \r\n")
+
+      assert MockServer.enable_tls(mock_pid, true) == {:error, {:tls_alert, 'unknown ca'}}
     end
   end
 end
