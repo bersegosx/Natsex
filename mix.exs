@@ -4,7 +4,7 @@ defmodule Natsex.MixProject do
   def project do
     [
       app: :natsex,
-      version: "0.8.2",
+      version: "0.9.0",
       elixir: "~> 1.6",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -40,6 +40,8 @@ defmodule Natsex.MixProject do
       {:ex_doc, "~> 0.18.0", only: :dev, runtime: false},
       {:ex_parameterized, "~> 1.3.2", only: :test},
       {:excoveralls, "~> 0.10", only: :test},
+
+      {:benchee, "~> 0.9", only: :dev},
     ]
   end
 

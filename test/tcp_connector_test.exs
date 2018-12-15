@@ -307,15 +307,24 @@ defmodule NatsexTest.TCPConnector do
 
       timeout = 1000
       rq_task = Task.async(fn ->
-        Natsex.request(natsex_pid, waiter_subject, message, timeout, "reply_inbox")
+        Natsex.request(natsex_pid, waiter_subject, message, timeout)
       end)
 
-      packet = "MSG #{waiter_subject} wsid reply_inbox #{byte_size(message)}\r\n" <>
+      :timer.sleep(100)
+      natsex_state = :sys.get_state(natsex_pid).mod_state
+
+      reply_to =
+        Map.keys(natsex_state.request_waiters)
+        |> List.first
+
+      packet = "MSG #{waiter_subject} wsid " <>
+               "#{reply_to} #{byte_size(message)}\r\n" <>
                "#{message}\r\n"
+
       MockServer.send_data(mock_pid, packet)
       :timer.sleep(100)
 
-      request_reply = "PUB reply_inbox 10\r\n#{answer}\r\n"
+      request_reply = "PUB #{reply_to} 10\r\n#{answer}\r\n"
       server_state = :sys.get_state(mock_pid)
       assert server_state.buffer =~ request_reply
 
@@ -325,7 +334,7 @@ defmodule NatsexTest.TCPConnector do
         |> Map.keys
         |> List.first
 
-      MockServer.send_data(mock_pid, "MSG reply_inbox #{sub_sid} 10\r\n#{answer}\r\n")
+      MockServer.send_data(mock_pid, "MSG #{reply_to} #{sub_sid} 10\r\n#{answer}\r\n")
       :timer.sleep(50)
 
       assert Task.await(rq_task, timeout) == {:ok, answer}

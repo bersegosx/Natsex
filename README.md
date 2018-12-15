@@ -24,7 +24,7 @@ The package can be installed by adding `natsex` to your list of dependencies in 
 ```elixir
 def deps do
   [
-    {:natsex, "~> 0.8.2"}
+    {:natsex, "~> 0.9.0"}
   ]
 end
 ```
@@ -66,10 +66,20 @@ iex(1)> Natsex.start_link(config: %{tls_required: true})
 
 # connects with client cert
 iex(1)> Natsex.start_link(config: %{tls_required: true,
-                                    cert: Path.expand("./cert.crt"),
-                                    cert_key: Path.expand("./client.key")})
+                                    cert_path: Path.expand("./cert.crt"),
+                                    cert_key_path: Path.expand("./client.key")})
 {:ok, #PID<0.195.0>}
 ```
+
+## Benchmarking
+
+| Name             |         ips |    average |   deviation |  median |  99th % |
+|------------------|------------:|-----------:|------------:|     ---:|     ---:|
+| parse-128        |   372.53 K  |    2.68 μs |   ±1421.03% |    2 μs |   12 μs |
+| pub - 128        |    15.96 K  |   62.67 μs |     ±30.65% |   59 μs |  111 μs |
+| sub-unsub-pub-16 |     4.45 K  |  224.69 μs |     ±47.88% |  210 μs |  449 μs |
+| request/reply    |     3.60 K  |  277.94 μs |     ±18.10% |  262 μs |  448 μs |
+
 
 ## TODO
 

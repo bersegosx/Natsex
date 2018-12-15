@@ -19,6 +19,9 @@ defmodule Natsex.TCPConnector do
     pong_waiter: nil,
     ping_timer_ref: nil,
 
+    request_waiters: %{},
+    reply_inbox: nil,
+
     config: %{
       host: "localhost",
       port: 4222,
@@ -44,12 +47,14 @@ defmodule Natsex.TCPConnector do
   }
 
   @pong_receive_timeout Application.get_env(:natsex, :pong_receive_timeout, 5_000)
+  @reply_subject_prefix "_INBOX.REPLY."
 
   @doc false
   def subscribe(pid, subject, who, sid \\ nil, queue_group \\ nil) do
     case Validator.is_valid(subject) do
       :ok ->
         Connection.call(pid, {:subscribe, who, subject, sid, queue_group})
+
       error ->
         {:error, error}
     end
@@ -63,8 +68,9 @@ defmodule Natsex.TCPConnector do
   @doc false
   def publish(pid, subject, payload \\ "", reply \\ nil, timeout \\ 5_000) do
     with :ok <- Validator.is_valid(subject),
-         :ok <- Validator.is_valid(reply, true) do
-        Connection.call(pid, {:publish, subject, reply, payload}, timeout)
+         :ok <- Validator.is_valid(reply, true)
+    do
+      Connection.call(pid, {:publish, subject, reply, payload}, timeout)
     else
       error ->
         {:error, error}
@@ -72,27 +78,15 @@ defmodule Natsex.TCPConnector do
   end
 
   @doc false
-  def request(pid, subject, payload, timeout \\ 1000, reply_inbox \\ nil) do
-    reply_inbox = if reply_inbox, do: reply_inbox, else: "inbox." <> UUID.uuid4()
-
-    waiter_task = Task.async(fn ->
-      receive do
-        {:natsex_message, {^reply_inbox, _sid, _}, message_body} ->
-          message_body
-      end
-    end)
-
-    reply_sid = subscribe(pid, reply_inbox, waiter_task.pid)
+  def request(pid, subject, payload, timeout \\ 1000) do
+    reply_inbox = @reply_subject_prefix <> UUID.uuid4()
     :ok = publish(pid, subject, payload, reply_inbox)
 
-    case Task.yield(waiter_task, timeout) || Task.shutdown(waiter_task) do
-      nil ->
-        unsubscribe(pid, reply_sid)
-        :timeout
+    Connection.call(pid, {:request, reply_inbox}, timeout)
+  end
 
-      {:ok, _} = resp ->
-        resp
-    end
+  def get_socket(pid) do
+    GenServer.call(pid, :get_socket)
   end
 
   def stop(pid) do
@@ -137,6 +131,24 @@ defmodule Natsex.TCPConnector do
 
   def handle_call(_, _, %{connection: :disconnected} = state) do
     {:reply, {:error, :disconnected}, state}
+  end
+
+  def handle_call({:request, inbox_uuid}, from, %{reply_inbox: nil} = state) do
+    {:reply, sid, state} = handle_call(
+      {:subscribe, self(), @reply_subject_prefix <> ">", nil, nil},
+      from,
+      state
+    )
+    handle_call({:request, inbox_uuid}, from, %{state| reply_inbox: sid})
+  end
+
+  def handle_call({:request, inbox_uuid}, from, state) do
+    {:noreply, %{state|
+      request_waiters: Map.put(state.request_waiters, inbox_uuid, from)}}
+  end
+
+  def handle_call(:get_socket, _from, state) do
+    {:reply, state, state}
   end
 
   def handle_call(
@@ -226,7 +238,7 @@ defmodule Natsex.TCPConnector do
 
   def handle_info(
     {:server_msg, message_header, message_body},
-    %{subscribers: subscribers} = state) do
+    %{subscribers: subscribers, request_waiters: request_waiters} = state) do
 
     Logger.debug "New message: #{message_header}, body: #{inspect message_body}"
 
@@ -244,7 +256,15 @@ defmodule Natsex.TCPConnector do
       Process.exit(self(), :message_body_length_mismatch)
     end
 
-    send(subscribers[sid], {:natsex_message, {subject, sid, reply_to}, message_body})
+    state =
+      if String.starts_with?(subject, @reply_subject_prefix) do
+        {client, request_waiters} = Map.pop(request_waiters, subject)
+        GenServer.reply(client, {:ok, message_body})
+        %{state| request_waiters: request_waiters}
+      else
+        send(subscribers[sid], {:natsex_message, {subject, sid, reply_to}, message_body})
+        state
+      end
 
     {:noreply, state}
   end

@@ -51,8 +51,8 @@ defmodule Natsex do
 
       # connects with client cert
       Natsex.start_link(config: %{tls_required: true,
-                                  cert: Path.expand("./cert.crt"),
-                                  cert_key: Path.expand("./client.key")})
+                                  cert_path: Path.expand("./cert.crt"),
+                                  cert_key_path: Path.expand("./client.key")})
       {:ok, #PID<>}
 
   """
@@ -62,7 +62,7 @@ defmodule Natsex do
   Initiates a subscription to a subject.
   When new message will arrive, caller process will receive message:
 
-      {:natsex_message, {subject, sid, nil}, message}
+      {:natsex_message, {subject, sid, reply_to}, message}
 
   ## Examples
 
@@ -109,8 +109,7 @@ defmodule Natsex do
       :timeout = Natsex.request(pid, "questions", "sup?", 10_000)
 
   """
-  defdelegate request(pid, subject, payload, timeout \\ 1000,
-                      reply_inbox \\ nil), to: Natsex.TCPConnector
+  defdelegate request(pid, subject, payload, timeout \\ 1000), to: Natsex.TCPConnector
 
   @doc """
   Stop client
