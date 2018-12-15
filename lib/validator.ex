@@ -30,9 +30,6 @@ defmodule Natsex.Validator do
       String.starts_with?(v, ".") || String.ends_with?(v, ".") ->
         "Can't starts/ends with '.' char"
 
-      !String.match?(v, ~r/^[a-zA-Z0-9\._-]+$/u) ->
-        "Must contains only ascii alphanumeric string"
-
       true ->
         :ok
     end

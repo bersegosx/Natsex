@@ -4,7 +4,7 @@ defmodule Natsex.MixProject do
   def project do
     [
       app: :natsex,
-      version: "0.8.1",
+      version: "0.8.2",
       elixir: "~> 1.6",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -26,7 +26,8 @@ defmodule Natsex.MixProject do
 
   def application do
     [
-      extra_applications: [:logger, :ssl]
+      extra_applications: [:logger, :ssl],
+      env: [pong_receive_timeout: 5_000],
     ]
   end
 

@@ -16,7 +16,7 @@ defmodule NatsexTest.Validator do
         {".", "Single '.' isn't allowed"},
         {"A..c", "Double '.' isn't allowed"},
         {"", "Empty string isn't allowed"},
-        {"成田.for.боярышник", "Must contains only ascii alphanumeric string"},
+        {"成田.for.боярышник", :ok},
       ]
   end
 

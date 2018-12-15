@@ -27,7 +27,7 @@ defmodule Natsex.TCPConnector do
       cert_path: nil,
       cert_key_path: nil,
 
-      verbose: true,
+      verbose: false,
       pedantic: true,
 
       user: nil,
@@ -43,7 +43,7 @@ defmodule Natsex.TCPConnector do
     }
   }
 
-  @pong_receive_timeout Application.get_env(:natsex, :pong_receive_timeout)
+  @pong_receive_timeout Application.get_env(:natsex, :pong_receive_timeout, 5_000)
 
   @doc false
   def subscribe(pid, subject, who, sid \\ nil, queue_group \\ nil) do
@@ -252,7 +252,7 @@ defmodule Natsex.TCPConnector do
   def handle_info(:keep_alive, state) do
     natsex_pid = self()
 
-    {:ok, pong_waiter} = Task.start_link(fn ->
+    pong_waiter = spawn_link(fn ->
       receive do
         :pong -> Logger.debug("Server PONG was received")
       after

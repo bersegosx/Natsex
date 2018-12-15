@@ -24,7 +24,7 @@ The package can be installed by adding `natsex` to your list of dependencies in 
 ```elixir
 def deps do
   [
-    {:natsex, "~> 0.8.1"}
+    {:natsex, "~> 0.8.2"}
   ]
 end
 ```
@@ -81,11 +81,6 @@ iex(1)> Natsex.start_link(config: %{tls_required: true,
 - [ ] Setting the Connection Name
 - [ ] Limit Outgoing Pings
 - [ ] Cluster support
-
-## Documentation
-Docs can be found at [hexdocs][hexdocs].
-
-<br>
 
 [shield-version]:   https://img.shields.io/hexpm/v/natsex.svg
 [shield-license]:   https://img.shields.io/hexpm/l/natsex.svg
