@@ -5,6 +5,7 @@ defmodule Natsex.Transport do
 
   require Logger
 
+  @spec connect(map(), map()) :: {:ok, map()} | {:error, String.t}
   def connect(state, config) do
     with {:ok, socket} <- :gen_tcp.connect(to_charlist(config.host), config.port,
                             [:binary, active: false], state.opts.connect_timeout),
@@ -27,6 +28,7 @@ defmodule Natsex.Transport do
   @doc """
   ssl handshake
   """
+  @spec setops(tuple(), map()) :: tuple()
   def setops(socket, %{config: %{tls_required: true} = config}) do
     ssl_opts =
       if Map.get(config, :cert_path, false) do
@@ -44,6 +46,7 @@ defmodule Natsex.Transport do
     socket
   end
 
+  @spec send_to_server(map(), String.t) :: nil
   def send_to_server(%{socket: socket} = state, msg) do
     if state.config.tls_required do
       :ssl.send(socket, msg)

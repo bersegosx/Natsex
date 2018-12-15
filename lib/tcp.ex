@@ -50,6 +50,7 @@ defmodule Natsex.TCPConnector do
   @reply_subject_prefix "_INBOX.REPLY."
 
   @doc false
+  @spec subscribe(pid, String.t, pid(), String.t|nil, String.t|nil) :: String.t | {:error, String.t}
   def subscribe(pid, subject, who, sid \\ nil, queue_group \\ nil) do
     case Validator.is_valid(subject) do
       :ok ->
@@ -66,6 +67,7 @@ defmodule Natsex.TCPConnector do
   end
 
   @doc false
+  @spec publish(pid(), String.t, any(), String | nil, pos_integer) :: :ok | {:error, String.t}
   def publish(pid, subject, payload \\ "", reply \\ nil, timeout \\ 5_000) do
     with :ok <- Validator.is_valid(subject),
          :ok <- Validator.is_valid(reply, true)
@@ -78,15 +80,12 @@ defmodule Natsex.TCPConnector do
   end
 
   @doc false
+  @spec request(pid(), String.t, any(), pos_integer) :: {:ok, String.t}
   def request(pid, subject, payload, timeout \\ 1000) do
     reply_inbox = @reply_subject_prefix <> UUID.uuid4()
     :ok = publish(pid, subject, payload, reply_inbox)
 
     Connection.call(pid, {:request, reply_inbox}, timeout)
-  end
-
-  def get_socket(pid) do
-    GenServer.call(pid, :get_socket)
   end
 
   def stop(pid) do
@@ -145,10 +144,6 @@ defmodule Natsex.TCPConnector do
   def handle_call({:request, inbox_uuid}, from, state) do
     {:noreply, %{state|
       request_waiters: Map.put(state.request_waiters, inbox_uuid, from)}}
-  end
-
-  def handle_call(:get_socket, _from, state) do
-    {:reply, state, state}
   end
 
   def handle_call(
@@ -322,10 +317,12 @@ defmodule Natsex.TCPConnector do
   end
   def terminate(_, _) do end
 
+  @spec send_to_server(map(), String.t) :: nil
   defp send_to_server(state, msg) do
     Transport.send_to_server(state, msg)
   end
 
+  @spec process_info_message(String.t, map()) :: {map(), reference()}
   def process_info_message(data_str, %{config: config} = state) do
     {"INFO", server_info} = Parser.parse_json_response(data_str)
 

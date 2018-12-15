@@ -3,6 +3,8 @@ defmodule Natsex.Validator do
   Subject/Reply_Subject names validator
   """
 
+  @spec is_valid(String.t, boolean()) :: :ok | String.t
+  @spec is_valid(String.t) :: :ok | String.t
   def is_valid(v, accept_nil) do
     if accept_nil and v == nil do
       :ok

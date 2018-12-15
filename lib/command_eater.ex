@@ -6,6 +6,7 @@ defmodule Natsex.CommandEater do
   @word_commands ~w(+OK PING PONG)
   @line_commands ["INFO ", "-ERR ", "PUB ", "SUB "]
 
+  @spec feed(String.t, list(String.t)) :: {String.t, [String.t]}
   def feed(buffer, commands \\ []) do
     case eat(buffer) do
       {"", ^buffer} ->
@@ -16,6 +17,7 @@ defmodule Natsex.CommandEater do
     end
   end
 
+  @spec eat(String.t) :: {String.t | {String.t, String.t}, String.t}
   defp eat("MSG " <> tail = buffer) do
     if tail =~ @message_end do
       [cmd_line, rest] = String.split(buffer, @message_end, parts: 2)
@@ -46,5 +48,4 @@ defmodule Natsex.CommandEater do
       {"", buffer}
     end
   end
-
 end
