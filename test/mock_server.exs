@@ -32,7 +32,7 @@ defmodule MockServer do
 
     send(self(), :post_init)
 
-    {:ok, %{listen_socket: listen_socket, buffer: ""}}
+    {:ok, %{listen_socket: listen_socket, buffer: "", tls: false}}
   end
 
   def handle_call(:state, _from, state) do
@@ -65,12 +65,15 @@ defmodule MockServer do
         err -> {err, nil}
       end
 
-    {:reply, reply, %{state| socket: socket}}
+    {:reply, reply, %{state| socket: socket, tls: true}}
   end
 
   def handle_cast({:send, data}, state) do
     IO.inspect(data, label: "->")
-    :gen_tcp.send(state.socket, data)
+
+    m = if state.tls, do: :ssl, else: :gen_tcp
+    apply(m, :send, [state.socket, data])
+
     {:noreply, state}
   end
 

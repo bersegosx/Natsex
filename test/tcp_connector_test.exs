@@ -11,6 +11,8 @@ defmodule NatsexTest.TCPConnector do
   @bad_cert     Path.expand("./test/cert/bad-client-cert.pem")
   @bad_cert_key Path.expand("./test/cert/bad-client-key.pem")
 
+  @info_messsage ~s(INFO {"auth_required":false,"max_payload":#{@max_payload}} \r\n)
+
   setup context do
     if context[:dont_autostart] == true do
       :ok
@@ -25,7 +27,7 @@ defmodule NatsexTest.TCPConnector do
   end
 
   defp conect_client(mock_pid) do
-    MockServer.send_data(mock_pid, "INFO {\"auth_required\":false,\"max_payload\":#{@max_payload}} \r\n")
+    MockServer.send_data(mock_pid, @info_messsage)
     :timer.sleep(50)
     MockServer.reset_buffer(mock_pid)
   end
@@ -34,14 +36,14 @@ defmodule NatsexTest.TCPConnector do
     test "command `CONNECT` will send", context do
       %{mock_pid: mock_pid, natsex_pid: natsex_pid} = context
 
-      MockServer.send_data(mock_pid, "INFO {\"auth_required\":false,\"max_payload\":1048576} \r\n")
+      MockServer.send_data(mock_pid, @info_messsage)
       :timer.sleep(50)
 
       natsex_state = :sys.get_state(natsex_pid).mod_state
       server_state = :sys.get_state(mock_pid)
 
       # Natsex received server info
-      assert natsex_state.server_info == %{auth_required: false, max_payload: 1048576}
+      assert natsex_state.server_info == %{auth_required: false, max_payload: @max_payload}
 
       # Natsex sent 'connect' message
       assert "CONNECT " <> _ = server_state.buffer
@@ -55,7 +57,7 @@ defmodule NatsexTest.TCPConnector do
       end
       assert {:timeout, {:gen_server, :call, _}} = catch_exit(publish_func.())
 
-      MockServer.send_data(mock_pid, "INFO {\"auth_required\":true,\"max_payload\":1048576} \r\n")
+      MockServer.send_data(mock_pid, @info_messsage)
       assert publish_func.()
     end
 
@@ -110,6 +112,15 @@ defmodule NatsexTest.TCPConnector do
       :timer.sleep(50)
 
       assert {:error, :disconnected} == Natsex.publish(natsex_pid, "subject")
+    end
+
+    @tag start_params: [connection_name: "ChGordon"]
+    test "set connection name", %{mock_pid: mock_pid} do
+      MockServer.send_data(mock_pid, @info_messsage)
+      :timer.sleep(50)
+
+      server_state = :sys.get_state(mock_pid)
+      assert server_state.buffer =~ ~s("name":"ChGordon")
     end
   end
 
@@ -355,7 +366,7 @@ defmodule NatsexTest.TCPConnector do
   describe "tls" do
     @tag start_params: [config: %{tls_required: true}]
     test "can connect without client cert", %{mock_pid: mock_pid, natsex_pid: natsex_pid} do
-      MockServer.send_data(mock_pid, "INFO {\"auth_required\":false,\"max_payload\":#{@max_payload}} \r\n")
+      MockServer.send_data(mock_pid, @info_messsage)
       MockServer.enable_tls(mock_pid)
 
       :timer.sleep(150)
@@ -367,15 +378,17 @@ defmodule NatsexTest.TCPConnector do
       MockServer.reset_buffer(mock_pid)
       :timer.sleep(50)
 
-      {subject, payload} = {"tls.is.working", "v.1.2"}
-      :ok = Natsex.publish(natsex_pid, subject, payload)
+      {subject, message} = {"tls.is.working", "v.1.2"}
+      sid = Natsex.subscribe(natsex_pid, subject, self())
+      :ok = Natsex.publish(natsex_pid, subject, message)
       :timer.sleep(50)
 
-      server_state = :sys.get_state(mock_pid)
+      payload = "MSG #{subject} #{sid} #{String.length(message)}\r\n" <>
+                "#{message}\r\n"
+      MockServer.send_data(mock_pid, payload)
+      :timer.sleep(100)
 
-      expected = "PUB #{subject} #{String.length(payload)}\r\n" <>
-                  "#{payload}\r\n"
-      assert server_state.buffer == expected
+      assert_receive {:natsex_message, {^subject, ^sid, nil}, ^message}
     end
 
     @tag start_params: [config: %{tls_required: true,
@@ -383,7 +396,7 @@ defmodule NatsexTest.TCPConnector do
     test "can connect with correct cert", context do
       %{mock_pid: mock_pid} = context
 
-      MockServer.send_data(mock_pid, "INFO {\"auth_required\":false,\"max_payload\":#{@max_payload}} \r\n")
+      MockServer.send_data(mock_pid, @info_messsage)
       MockServer.enable_tls(mock_pid, true)
 
       :timer.sleep(150)
@@ -396,9 +409,23 @@ defmodule NatsexTest.TCPConnector do
     @tag start_params: [config: %{tls_required: true,
                                   cert_path: @bad_cert, cert_key_path: @bad_cert_key}]
     test "can't connect with wrong cert", %{mock_pid: mock_pid} do
-      MockServer.send_data(mock_pid, "INFO {\"auth_required\":false,\"max_payload\":#{@max_payload}} \r\n")
+      MockServer.send_data(mock_pid, @info_messsage)
 
       assert MockServer.enable_tls(mock_pid, true) == {:error, {:tls_alert, 'unknown ca'}}
+    end
+
+    @tag start_params: [config: %{tls_required: true}]
+    test "will stop", context do
+      %{mock_pid: mock_pid, natsex_pid: natsex_pid} = context
+
+      assert Process.alive?(natsex_pid) == true
+
+      MockServer.send_data(mock_pid, @info_messsage)
+      MockServer.enable_tls(mock_pid)
+      :timer.sleep(150)
+
+      :ok = Natsex.stop(natsex_pid)
+      assert Process.alive?(natsex_pid) == false
     end
   end
 end

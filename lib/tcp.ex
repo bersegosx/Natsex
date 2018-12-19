@@ -42,7 +42,8 @@ defmodule Natsex.TCPConnector do
       connect_timeout: 200,
       ping_interval: 60_000,
       allow_reconnect: true,
-      reconnect_time_wait: 1_000
+      reconnect_time_wait: 1_000,
+      connection_name: "Natsex",
     }
   }
 
@@ -327,7 +328,7 @@ defmodule Natsex.TCPConnector do
     {"INFO", server_info} = Parser.parse_json_response(data_str)
 
     connect_data = %{
-      verbose: config.verbose, lang: "elixir", name: "natsex",
+      verbose: config.verbose, lang: "elixir", name: state.opts.connection_name,
       version: Natsex.MixProject.project()[:version],
       pedantic: config.pedantic, tls_required: config.tls_required,
       protocol: 0
